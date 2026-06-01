@@ -1,0 +1,269 @@
+[general]
+  loglevel = "warning"
+  hosts = ["localhost"]
+  host_types = []
+  default_server_domain = "localhost"
+  registration_timeout = "infinity"
+  language = "en"
+  max_fsm_queue = 1000
+
+##
+## XMPP 클라이언트 연결 (Gajim 등)
+##
+[[listen.c2s]]
+  port = 5222
+  access = "c2s"
+  shaper = "c2s_shaper"
+  max_stanza_size = 65536
+  tls.verify_mode = "none"
+  tls.certfile = "priv/ssl/fake_server.pem"
+
+##
+## 서버간 통신
+##
+[[listen.s2s]]
+  port = 5269
+  shaper = "s2s_shaper"
+  max_stanza_size = 131072
+
+##
+## HTTP BOSH / WebSocket (평문)
+##
+[[listen.http]]
+  port = 5280
+  transport.num_acceptors = 10
+  transport.max_connections = 1024
+
+  [[listen.http.handlers.mod_bosh]]
+    host = "_"
+    path = "/http-bind"
+
+  [[listen.http.handlers.mod_websockets]]
+    host = "_"
+    path = "/ws-xmpp"
+
+##
+## HTTP BOSH / WebSocket (TLS)
+##
+[[listen.http]]
+  port = 5285
+  transport.num_acceptors = 10
+  transport.max_connections = 1024
+  tls.verify_mode = "none"
+  tls.certfile = "priv/ssl/fake_cert.pem"
+  tls.keyfile = "priv/ssl/fake_key.pem"
+
+  [[listen.http.handlers.mod_bosh]]
+    host = "_"
+    path = "/http-bind"
+
+  [[listen.http.handlers.mod_websockets]]
+    host = "_"
+    path = "/ws-xmpp"
+
+##
+## GraphQL Admin API
+##
+[[listen.http]]
+  ip_address = "0.0.0.0"
+  port = 5551
+  transport.num_acceptors = 10
+  transport.max_connections = 1024
+
+  [[listen.http.handlers.mongoose_graphql_handler]]
+    host = "_"
+    path = "/api/graphql"
+    schema_endpoint = "admin"
+    username = "admin"
+    password = "secret"
+
+##
+## GraphQL Domain Admin API
+##
+[[listen.http]]
+  ip_address = "0.0.0.0"
+  port = 5541
+  transport.num_acceptors = 10
+  transport.max_connections = 1024
+
+  [[listen.http.handlers.mongoose_graphql_handler]]
+    host = "_"
+    path = "/api/graphql"
+    schema_endpoint = "domain_admin"
+
+##
+## GraphQL User API
+##
+[[listen.http]]
+  ip_address = "0.0.0.0"
+  port = 5561
+  transport.num_acceptors = 10
+  transport.max_connections = 1024
+
+  [[listen.http.handlers.mongoose_graphql_handler]]
+    host = "_"
+    path = "/api/graphql"
+    schema_endpoint = "user"
+
+##
+## Prometheus 메트릭
+##
+[[listen.http]]
+  port = 9091
+  transport.num_acceptors = 10
+
+  [[listen.http.handlers.mongoose_prometheus_handler]]
+    host = "_"
+    path = "/metrics"
+
+##
+## External Component
+##
+[[listen.service]]
+  port = 8888
+  access = "all"
+  shaper_rule = "fast"
+  ip_address = "127.0.0.1"
+  password = "secret"
+
+##
+## 인증 - 내장 Mnesia DB
+##
+[auth]
+  [auth.internal]
+
+[internal_databases.mnesia]
+
+##
+## RDBMS 풀 — mod_mam(메시지 영구저장) 백엔드용 PostgreSQL
+##
+[outgoing_pools.rdbms.default]
+  scope = "global"
+  workers = 5
+  [outgoing_pools.rdbms.default.connection]
+    driver = "pgsql"
+    host = "xmpp-db"
+    port = 5432
+    database = "mongooseim"
+    username = "mongooseim"
+    password = "mongooseim_secret"
+
+##
+## 서비스
+##
+[services.service_mongoose_system_metrics]
+
+##
+## 모듈
+##
+[modules.mod_adhoc]
+[modules.mod_ping]
+[modules.mod_roster]
+
+[modules.mod_disco]
+  users_can_see_hidden_services = false
+[modules.mod_stream_management]
+[modules.mod_bosh]
+[modules.mod_presence]
+[modules.mod_sic]
+[modules.mod_vcard]
+  host = "vjud.@HOST@"
+[modules.mod_carboncopy]
+[modules.mod_offline]
+
+##
+## XEP-0313 Message Archive Management — 메시지 영구저장 + 히스토리 조회
+## pm = 1:1 메시지, muc = 단톡방 메시지
+##
+[modules.mod_mam]
+  backend = "rdbms"
+  [modules.mod_mam.pm]
+    archive_chat_markers = false
+  [modules.mod_mam.muc]
+    host = "muclight.@HOST@"
+
+##
+## MUC Light — 단톡방(카톡식 멤버 기반 그룹채팅, XEP-XXXX)
+##
+[modules.mod_muc_light]
+  host = "muclight.@HOST@"
+  backend = "rdbms"
+  rooms_in_rosters = true   # 가입한 방을 roster에 자동 추가
+
+[modules.mod_register]
+  ip_access = [
+    {address = "127.0.0.0/8",   policy = "allow"},
+    {address = "172.16.0.0/12", policy = "allow"},
+    {address = "10.0.0.0/8",    policy = "allow"},
+    {address = "0.0.0.0/0",     policy = "deny"}
+  ]
+  access = "register"
+
+##
+## XEP-0363 HTTP File Upload (사진/파일 전송)
+## 백엔드: MinIO (S3 호환), docker-compose의 minio 서비스
+##
+[modules.mod_http_upload]
+  host = "upload.@HOST@"
+  backend = "s3"
+  expiration_time = 3600     # 업로드 슬롯 유효시간 (초)
+  max_file_size = 10_485_760 # 10 MB
+
+  [modules.mod_http_upload.s3]
+    bucket_url = "http://localhost:9000/mongooseim-uploads"
+    region = "us-east-1"
+    access_key_id = "minioadmin"
+    secret_access_key = "minioadmin"
+    add_acl = false
+
+##
+## 계측
+##
+[instrumentation.log]
+
+##
+## 트래픽 쉐이퍼
+##
+[shaper.normal]
+  max_rate = 1000
+[shaper.fast]
+  max_rate = 50_000
+[shaper.mam_shaper]
+  max_rate = 1
+[shaper.mam_global_shaper]
+  max_rate = 1000
+
+##
+## ACL / 접근 제어
+##
+[acl]
+  local = [{}]
+
+[access]
+  max_user_sessions         = [{acl = "all",   value = 10}]
+  max_user_offline_messages = [{acl = "admin", value = 5000}, {acl = "all", value = 100}]
+  local                     = [{acl = "local", value = "allow"}]
+  c2s                       = [{acl = "blocked", value = "deny"}, {acl = "all", value = "allow"}]
+  c2s_shaper                = [{acl = "admin", value = "none"}, {acl = "all", value = "normal"}]
+  s2s_shaper                = [{acl = "all", value = "fast"}]
+  muc_admin                 = [{acl = "admin", value = "allow"}]
+  muc_create                = [{acl = "local", value = "allow"}]
+  muc                       = [{acl = "all",   value = "allow"}]
+  register                  = [{acl = "all",   value = "allow"}]
+  mam_set_prefs             = [{acl = "all",   value = "default"}]
+  mam_get_prefs             = [{acl = "all",   value = "default"}]
+  mam_lookup_messages       = [{acl = "all",   value = "default"}]
+  mam_set_prefs_shaper             = [{acl = "all", value = "mam_shaper"}]
+  mam_get_prefs_shaper             = [{acl = "all", value = "mam_shaper"}]
+  mam_lookup_messages_shaper       = [{acl = "all", value = "mam_shaper"}]
+  mam_set_prefs_global_shaper      = [{acl = "all", value = "mam_global_shaper"}]
+  mam_get_prefs_global_shaper      = [{acl = "all", value = "mam_global_shaper"}]
+  mam_lookup_messages_global_shaper = [{acl = "all", value = "mam_global_shaper"}]
+
+##
+## S2S
+##
+[s2s]
+  use_starttls = "optional"
+  default_policy = "deny"
+  outgoing.port = 5269

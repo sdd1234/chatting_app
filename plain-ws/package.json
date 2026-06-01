@@ -1,0 +1,14 @@
+{
+  "name": "plain-ws-chat",
+  "version": "1.0.0",
+  "description": "XMPP 미사용 - Node + ws 만으로 굴리는 JSON-over-WebSocket 채팅 (MongooseIM 안 거침)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2",
+    "redis": "^4.7.0",
+    "ws": "^8.18.0"
+  }
+}

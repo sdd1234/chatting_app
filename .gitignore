@@ -1,0 +1,44 @@
+# ── Node (plain-ws, react-client, websocket-client)
+node_modules/
+dist/
+.vite/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ── Java / Maven / Spring Boot (spring-server)
+target/
+*.class
+*.jar
+!**/lib/*.jar
+.mvn/wrapper/maven-wrapper.jar
+hs_err_pid*
+
+# ── 환경변수 / 시크릿 (운영 전환 시 추가될 값들)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.jks
+*.crt
+
+# ── IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# ── OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── 런타임 컨테이너 볼륨 (있다면)
+data/
+postgres-data/
+minio-data/
+redis-data/

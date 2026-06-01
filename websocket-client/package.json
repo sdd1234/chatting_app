@@ -1,0 +1,13 @@
+{
+  "name": "xmpp-websocket-demo",
+  "version": "1.0.0",
+  "description": "Gajim 없이 WebSocket으로 MongooseIM XMPP 통신 데모",
+  "main": "ws_client.js",
+  "scripts": {
+    "start": "node ws_client.js",
+    "demo": "bash demo.sh"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

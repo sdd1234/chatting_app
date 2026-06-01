@@ -1,0 +1,59 @@
+server:
+  port: 8080
+  error:
+    include-message: always
+
+spring:
+  application:
+    name: notice-server
+  data:
+    redis:
+      host: ${REDIS_HOST:xmpp-redis}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
+# JWT
+jwt:
+  secret: ${JWT_SECRET:demo-secret-change-me-32bytes-minimum-please-xx}
+  expiration-ms: ${JWT_EXPIRATION_MS:3600000}    # 1시간
+
+# 데모 시드 계정 (UserService 가 부팅 시 Redis 에 HSET)
+auth:
+  seed:
+    - username: admin
+      password: ${ADMIN_PASSWORD:admin123}
+      role: admin
+    - username: jihoon
+      password: jihoon123
+      role: user
+    - username: emma
+      password: emma123
+      role: user
+    - username: minho
+      password: minho123
+      role: user
+
+# 공지 Redis pub/sub 채널
+notice:
+  channel: notice.broadcast
+
+# MongooseIM GraphQL Admin 프록시 + 로그인 위임
+mongooseim:
+  graphql:
+    url:  ${MONGOOSE_GRAPHQL_URL:http://xmpp-server:5551/api/graphql}
+    user: ${MONGOOSE_GRAPHQL_USER:admin}
+    pass: ${MONGOOSE_GRAPHQL_PASS:secret}
+  domain: ${MONGOOSE_DOMAIN:localhost}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    com.example.notice: INFO

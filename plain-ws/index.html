@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Plain WS Chat (XMPP 미사용)</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; }
+
+  #login { margin: auto; padding: 28px 32px; border: 1px solid #ccc; border-radius: 12px; min-width: 280px; }
+  #login h2 { margin: 0 0 4px; }
+  #login .sub { color: #666; font-size: 13px; margin-bottom: 16px; }
+  #login input { width: 100%; padding: 8px 10px; font-size: 14px; margin-bottom: 8px; }
+  #login button { width: 100%; padding: 10px; font-size: 14px; cursor: pointer; }
+
+  #app { display: none; width: 100%; height: 100%; }
+  #sidebar { width: 220px; border-right: 1px solid #ccc; display: flex; flex-direction: column; }
+  #sidebar .banner { background: #fff8d6; padding: 8px 10px; font-size: 12px; border-bottom: 1px solid #e8d97a; line-height: 1.4; }
+  #sidebar .banner b { color: #b87100; }
+  #sidebar h3 { margin: 8px 10px 4px; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+  #peers { flex: 1; overflow-y: auto; padding: 0 6px 8px; }
+  .peer { padding: 7px 10px; cursor: pointer; border-radius: 6px; margin-bottom: 2px; font-size: 14px; display: flex; align-items: center; }
+  .peer:hover { background: #eef; }
+  .peer.active { background: #dde; font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; flex-shrink: 0; }
+  .dot.on { background: #3b3; }
+  .dot.off { background: #ccc; }
+  #addPeer { margin: 4px 10px 12px; }
+  #addPeer input { width: 100%; padding: 6px 8px; font-size: 13px; }
+
+  #main { flex: 1; display: flex; flex-direction: column; }
+  #header { padding: 10px 14px; border-bottom: 1px solid #ccc; font-weight: 600; }
+  #log { flex: 1; padding: 14px; overflow-y: auto; background: #fafafa; }
+  #col { display: flex; flex-direction: column; }
+  .m { margin-bottom: 8px; max-width: 60%; padding: 7px 11px; border-radius: 10px; font-size: 14px; line-height: 1.4; word-wrap: break-word; }
+  .m.me { background: #d6f5d6; align-self: flex-end; }
+  .m.you { background: #fff; border: 1px solid #e0e0e0; align-self: flex-start; }
+  .m .meta { font-size: 10px; color: #888; margin-bottom: 2px; }
+
+  #input { display: flex; border-top: 1px solid #ccc; padding: 8px; gap: 8px; }
+  #input input { flex: 1; padding: 9px 12px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
+  #input button { padding: 0 18px; font-size: 14px; cursor: pointer; }
+
+  #status { font-size: 11px; color: #888; padding: 4px 14px; border-top: 1px solid #eee; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h2>Plain WS Chat</h2>
+  <div class="sub">XMPP/MongooseIM 미사용. 순수 Node + ws 위에 JSON으로만 통신.</div>
+  <input id="u" placeholder="username" value="jihoon" autofocus>
+  <button onclick="login()">접속</button>
+</div>
+
+<div id="app">
+  <div id="sidebar">
+    <div class="banner">
+      <b>XMPP-free</b><br>
+      <code>{type:"msg",to,body}</code> 같은 평범한 JSON.
+    </div>
+    <h3>온라인</h3>
+    <div id="peers"></div>
+    <div id="addPeer">
+      <input id="addPeerInput" placeholder="다른 사용자 jid… (Enter)" onkeydown="if(event.key==='Enter')addPeerName()">
+    </div>
+  </div>
+  <div id="main">
+    <div id="header">대화 상대를 선택하세요</div>
+    <div id="log"><div id="col"></div></div>
+    <div id="input">
+      <input id="msg" placeholder="메시지 입력 (Enter)" onkeydown="if(event.key==='Enter')doSend()" disabled>
+      <button id="sendBtn" onclick="doSend()" disabled>보내기</button>
+    </div>
+    <div id="status">disconnected</div>
+  </div>
+</div>
+
+<script>
+let ws, me, peer = null;
+const peers = new Map();   // user → {online}
+const conv  = new Map();   // user → [msgs]
+
+const $ = id => document.getElementById(id);
+const setStatus = s => $('status').textContent = s;
+const escape = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
+
+function login() {
+  me = $('u').value.trim();
+  if (!me) return;
+  ws = new WebSocket('ws://' + location.host + '/ws');
+  ws.onopen  = () => { ws.send(JSON.stringify({ type: 'hello', user: me })); setStatus('connected as ' + me); };
+  ws.onclose = () => setStatus('disconnected');
+  ws.onerror = () => setStatus('error');
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === 'welcome') {
+      $('login').style.display = 'none';
+      $('app').style.display = 'flex';
+      m.online.forEach(u => { if (u !== me) peers.set(u, { online: true }); });
+      renderPeers();
+    } else if (m.type === 'presence') {
+      if (m.user === me) return;
+      if (!peers.has(m.user)) peers.set(m.user, { online: m.online });
+      else peers.get(m.user).online = m.online;
+      renderPeers();
+    } else if (m.type === 'msg') {
+      const other = m.from === me ? m.to : m.from;
+      if (!conv.has(other)) conv.set(other, []);
+      conv.get(other).push(m);
+      if (other === peer) renderConv();
+      if (!peers.has(other)) { peers.set(other, { online: false }); renderPeers(); }
+    } else if (m.type === 'history') {
+      conv.set(m.with, m.items);
+      if (m.with === peer) renderConv();
+    } else if (m.type === 'error') {
+      setStatus('error: ' + m.message);
+    }
+  };
+}
+
+function addPeerName() {
+  const v = $('addPeerInput').value.trim();
+  if (!v || v === me) return;
+  if (!peers.has(v)) peers.set(v, { online: false });
+  $('addPeerInput').value = '';
+  renderPeers();
+  selectPeer(v);
+}
+
+function renderPeers() {
+  const el = $('peers'); el.innerHTML = '';
+  for (const [u, info] of peers) {
+    const d = document.createElement('div');
+    d.className = 'peer' + (u === peer ? ' active' : '');
+    d.innerHTML = `<span class="dot ${info.online ? 'on' : 'off'}"></span>${escape(u)}`;
+    d.onclick = () => selectPeer(u);
+    el.appendChild(d);
+  }
+}
+
+function selectPeer(u) {
+  peer = u;
+  $('header').textContent = '대화: ' + u;
+  $('msg').disabled = false;
+  $('sendBtn').disabled = false;
+  if (!conv.has(u)) conv.set(u, []);
+  ws.send(JSON.stringify({ type: 'history', with: u, limit: 50 }));
+  renderPeers();
+  renderConv();
+}
+
+function renderConv() {
+  const col = $('col'); col.innerHTML = '';
+  const items = conv.get(peer) || [];
+  items.forEach(m => {
+    const d = document.createElement('div');
+    const mine = m.from === me;
+    d.className = 'm ' + (mine ? 'me' : 'you');
+    d.innerHTML = `<div class="meta">${mine ? 'me' : escape(m.from)} · ${new Date(m.ts).toLocaleTimeString()}</div>${escape(m.body)}`;
+    col.appendChild(d);
+  });
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+function doSend() {
+  if (!peer) { setStatus('대화 상대 먼저 선택'); return; }
+  const t = $('msg').value.trim();
+  if (!t) return;
+  ws.send(JSON.stringify({ type: 'msg', to: peer, body: t }));
+  $('msg').value = '';
+}
+</script>
+</body>
+</html>

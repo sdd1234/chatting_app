@@ -1,0 +1,1612 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XMPP Chat — MongooseIM</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0a0a12;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── 상단바 ─────────────────────────────────────────────── */
+    #topbar {
+      background: #10182e;
+      border-bottom: 1px solid #1e3060;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    #topbar .logo { color: #00d4aa; font-weight: bold; font-size: 1rem; }
+    #topbar .hint { color: #334; font-size: 0.78rem; flex: 1; }
+
+    /* ── 메인 패널 ─────────────────────────────────────── */
+    #panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #0a0a12;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    /* ── 로그인 카드 ─────────────────────────────────────────── */
+    .login-card {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-box {
+      background: #12192e;
+      border: 1px solid #1e3060;
+      border-radius: 12px;
+      padding: 28px 30px;
+      width: 340px;
+    }
+    .login-box h2 { color: #00d4aa; font-size: 1.1rem; margin-bottom: 4px; }
+    .login-box .sub { color: #445; font-size: 0.78rem; margin-bottom: 18px; }
+    .quick-row { display: flex; gap: 6px; margin-bottom: 14px; }
+    .q-btn {
+      flex: 1;
+      background: #0f1e3a;
+      border: 1px solid #1e3060;
+      border-radius: 6px;
+      padding: 6px;
+      color: #00d4aa;
+      font-size: 0.82rem;
+      cursor: pointer;
+      text-align: center;
+    }
+    .q-btn:hover { background: #1a2e50; }
+    .lf { margin-bottom: 10px; }
+    .lf label { display: block; font-size: 0.72rem; color: #667; margin-bottom: 4px; }
+    .lf input {
+      width: 100%;
+      background: #0f1e3a;
+      border: 1px solid #1e3060;
+      border-radius: 6px;
+      padding: 8px 11px;
+      color: #e0e0e0;
+      font-size: 0.88rem;
+    }
+    .lf input:focus { outline: none; border-color: #00d4aa; }
+    .lerr { color: #e74c3c; font-size: 0.75rem; min-height: 16px; margin-bottom: 8px; }
+    .btn-login {
+      width: 100%;
+      background: #00d4aa;
+      color: #0a1a1a;
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .btn-login:hover { background: #00ffcc; }
+    .btn-login:disabled { background: #1e3a3a; color: #345; cursor: not-allowed; }
+
+    /* ── 채팅 UI ─────────────────────────────────────────────── */
+    .chat-ui { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .chat-ui.visible { display: flex; }
+
+    /* 패널 헤더 */
+    .panel-header {
+      background: #10182e;
+      border-bottom: 1px solid #1e3060;
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .ph-avatar {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: #1e3060;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: bold; color: #00d4aa; font-size: 0.9rem;
+    }
+    .ph-name { font-size: 0.95rem; font-weight: 600; flex: 1; }
+    .ph-jid  { font-size: 0.72rem; color: #445; }
+    .btn-logout {
+      background: transparent;
+      border: 1px solid #e74c3c44;
+      color: #e74c3c;
+      border-radius: 4px;
+      padding: 4px 11px;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .btn-logout:hover { background: #e74c3c22; }
+
+    /* 상대방 상태 바 */
+    .peer-bar {
+      padding: 7px 18px;
+      font-size: 0.78rem;
+      background: #0d1428;
+      border-bottom: 1px solid #1e3060;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .peer-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #445; flex-shrink: 0;
+    }
+    .peer-dot.online  { background: #2ecc71; }
+    .peer-dot.offline { background: #445; }
+    .peer-name { color: #888; }
+    .peer-status { color: #445; }
+    .peer-status.online { color: #2ecc71; }
+    .peer-input {
+      background: transparent;
+      border: none;
+      color: #888;
+      font-size: 0.78rem;
+      font-family: inherit;
+      outline: none;
+      width: 140px;
+      padding: 2px 4px;
+      border-bottom: 1px dashed #1e3060;
+    }
+    .peer-input:focus { border-bottom-color: #00d4aa; color: #e0e0e0; }
+
+    /* 메시지 창 */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    .sys-msg {
+      text-align: center;
+      margin: 10px 0;
+    }
+    .sys-msg span {
+      background: #10182e;
+      border: 1px solid #1e3060;
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 0.75rem;
+      color: #445;
+    }
+    .msg-row { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 2px; }
+    .msg-row.out { flex-direction: row-reverse; }
+    .msg-av {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #1e3060;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.72rem; font-weight: bold; color: #00d4aa;
+      flex-shrink: 0;
+    }
+    .msg-row.out .msg-av { color: #2ecc71; background: #0f2a1a; }
+    .bwrap { max-width: 72%; display: flex; flex-direction: column; }
+    .msg-row.out .bwrap { align-items: flex-end; }
+    .bubble {
+      padding: 8px 13px;
+      border-radius: 16px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .msg-row.in  .bubble { background: #14203a; border-bottom-left-radius: 3px; color: #ccc; }
+    .msg-row.out .bubble { background: #005248; border-bottom-right-radius: 3px; color: #e0fff8; }
+    .msg-time { font-size: 0.68rem; color: #334; margin-top: 2px; padding: 0 3px; }
+    .bubble-trans {
+      font-size: 0.78rem;
+      color: #7a9;
+      margin-top: 4px;
+      padding: 4px 10px;
+      border-left: 2px solid #1e3060;
+      font-style: italic;
+    }
+    .bubble-trans.loading { color: #445; }
+    .bubble-trans.err { color: #c95; border-left-color: #c95; }
+    .trans-toggle {
+      font-size: 0.7rem;
+      color: #556;
+      margin-top: 3px;
+      padding: 0 4px;
+      cursor: pointer;
+      user-select: none;
+      display: inline-block;
+    }
+    .trans-toggle:hover { color: #00d4aa; }
+    .trans-toggle.loading { color: #334; cursor: default; }
+    .trans-toggle.err { color: #c95; cursor: default; }
+
+    /* 입력 영역 */
+    .input-area {
+      background: #10182e;
+      border-top: 1px solid #1e3060;
+      padding: 12px 16px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      flex-shrink: 0;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    .msg-input {
+      flex: 1;
+      background: #0f1e3a;
+      border: 1px solid #1e3060;
+      border-radius: 18px;
+      padding: 9px 15px;
+      color: #e0e0e0;
+      font-size: 0.9rem;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+      max-height: 120px;
+      overflow-y: auto;
+      line-height: 1.4;
+    }
+    .msg-input:focus { border-color: #00d4aa33; }
+    .msg-input:disabled { opacity: 0.3; }
+    .btn-send {
+      background: #00d4aa;
+      color: #0a1a1a;
+      border: none;
+      border-radius: 50%;
+      width: 40px; height: 40px;
+      font-size: 1rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .btn-send:hover { background: #00ffcc; }
+    .btn-send:disabled { background: #1e3a3a; cursor: not-allowed; }
+    .btn-attach {
+      background: #1e3060;
+      color: #9ad;
+      border: none;
+      border-radius: 50%;
+      width: 40px; height: 40px;
+      font-size: 1.05rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .btn-attach:hover { background: #2a4080; color: #cef; }
+    .btn-attach:disabled { background: #16203a; color: #445; cursor: not-allowed; }
+    .bubble img.chat-img {
+      max-width: 280px;
+      max-height: 280px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: block;
+    }
+    .bubble .img-caption { font-size: 0.72rem; color: #667; margin-top: 4px; word-break: break-all; }
+
+    /* 로그 토글 */
+    .log-toggle {
+      background: #0d1428;
+      border-top: 1px solid #1e3060;
+      padding: 4px 14px;
+      font-size: 0.7rem;
+      color: #334;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .log-toggle:hover { color: #556; }
+    .log-box {
+      background: #060a12;
+      border-top: 1px solid #1e3060;
+      height: 140px;
+      overflow-y: auto;
+      padding: 5px 10px;
+      font-size: 0.7rem;
+      font-family: 'Consolas', monospace;
+      display: none;
+      flex-shrink: 0;
+    }
+    .log-box.open { display: block; }
+    .log-box .s { color: #00906a; }
+    .log-box .r { color: #2a5faa; }
+    .log-box .i { color: #7a6; }
+    .log-box .e { color: #c0392b; }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #1e3060; border-radius: 2px; }
+
+    /* ── 채팅 리스트 ─────────────────────────────────────── */
+    .list-view { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+    .list-view.visible { display: flex; }
+    .list-toolbar {
+      background: #10182e;
+      border-bottom: 1px solid #1e3060;
+      padding: 10px 16px;
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    .list-toolbar .me {
+      flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0;
+    }
+    .list-toolbar .me-av {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: #0f2a1a; color: #2ecc71;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: bold; font-size: 0.85rem; flex-shrink: 0;
+    }
+    .list-toolbar .me-info { display: flex; flex-direction: column; min-width: 0; }
+    .list-toolbar .me-name { font-size: 0.92rem; color: #cfe; font-weight: 600; }
+    .list-toolbar .me-jid { font-size: 0.7rem; color: #445; }
+    .btn-new-chat {
+      background: #00d4aa; color: #0a1a1a; border: none;
+      border-radius: 16px; padding: 6px 12px; font-size: 0.82rem;
+      cursor: pointer; font-weight: 600;
+    }
+    .btn-new-chat:hover { background: #00ffcc; }
+    .chat-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+    .chat-list-empty {
+      text-align: center; color: #445; font-size: 0.85rem;
+      padding: 40px 20px; line-height: 1.6;
+    }
+    .chat-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; border-bottom: 1px solid #0e1428;
+      cursor: pointer;
+    }
+    .chat-item:hover { background: #0e1730; }
+    .chat-av {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: #1e3060; color: #00d4aa;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: bold; font-size: 0.95rem; flex-shrink: 0;
+    }
+    .chat-item.group .chat-av { background: #2a1e60; color: #d4aaff; }
+    .chat-info { flex: 1; min-width: 0; }
+    .chat-name { font-size: 0.95rem; color: #cfe; font-weight: 600; }
+    .chat-sub  { font-size: 0.73rem; color: #556; margin-top: 2px;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chat-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+                 flex-shrink: 0; min-width: 40px; }
+    .chat-time { font-size: 0.68rem; color: #445; }
+    .chat-badge {
+      background: #00d4aa; color: #0a1a1a;
+      font-size: 0.7rem; font-weight: 700;
+      padding: 2px 7px; border-radius: 10px;
+      min-width: 18px; text-align: center;
+    }
+
+    /* ── 채팅 뷰 헤더(돌아가기/멤버/나가기) ───────────── */
+    .chat-header {
+      background: #10182e;
+      border-bottom: 1px solid #1e3060;
+      padding: 10px 14px;
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    .btn-back {
+      background: transparent; border: none; color: #00d4aa;
+      font-size: 1.3rem; cursor: pointer; padding: 0 6px;
+    }
+    .chat-header .ch-info { flex: 1; min-width: 0; }
+    .chat-header .ch-name { font-size: 0.95rem; color: #cfe; font-weight: 600; }
+    .chat-header .ch-sub  { font-size: 0.7rem; color: #556; }
+    .btn-leave {
+      background: #401818; color: #ff7a7a; border: 1px solid #602020;
+      border-radius: 14px; padding: 5px 11px; font-size: 0.78rem; cursor: pointer;
+    }
+    .btn-leave:hover { background: #602020; color: #ffaaaa; }
+
+    /* ── 새 채팅 모달 ─────────────────────────────────────── */
+    .modal-mask {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center; justify-content: center;
+    }
+    .modal-mask.visible { display: flex; }
+    .modal-card {
+      background: #12192e; border: 1px solid #1e3060; border-radius: 12px;
+      width: 320px; padding: 22px;
+    }
+    .modal-card h3 { color: #00d4aa; font-size: 1rem; margin-bottom: 6px; }
+    .modal-card .sub { color: #556; font-size: 0.78rem; margin-bottom: 14px; }
+    .member-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 6px; border-radius: 6px; cursor: pointer;
+    }
+    .member-row:hover { background: #0e1730; }
+    .member-row input { width: 16px; height: 16px; cursor: pointer; }
+    .member-av {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #1e3060; color: #00d4aa;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.72rem; font-weight: bold;
+    }
+    .member-name { color: #cfe; font-size: 0.88rem; flex: 1; }
+    .modal-actions {
+      display: flex; gap: 8px; margin-top: 14px;
+    }
+    .modal-actions button {
+      flex: 1; padding: 9px; border-radius: 8px; border: none;
+      font-size: 0.86rem; cursor: pointer; font-weight: 600;
+    }
+    .btn-cancel { background: #1e3060; color: #9ad; }
+    .btn-create { background: #00d4aa; color: #0a1a1a; }
+    .btn-create:disabled { background: #1e3a3a; cursor: not-allowed; color: #556; }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="logo">XMPP Chat</span>
+  <span class="hint">탭 1개 = 클라이언트 1개. 단톡 테스트는 탭 3개에 각각 로그인 &nbsp;·&nbsp; jihoon/jihoon123 &nbsp; emma/emma123 &nbsp; minho/minho123</span>
+</div>
+
+<div id="panel">
+
+  <!-- 로그인 -->
+  <div class="login-card" id="login-card">
+    <div class="login-box">
+      <h2>XMPP 로그인</h2>
+      <p class="sub">이 탭은 독립된 클라이언트로 동작합니다</p>
+      <div class="quick-row">
+        <div class="q-btn" data-fill="jihoon">지훈</div>
+        <div class="q-btn" data-fill="emma">Emma</div>
+        <div class="q-btn" data-fill="minho">민호</div>
+      </div>
+      <div class="lf">
+        <label>사용자명</label>
+        <input type="text" id="in-user" placeholder="jihoon / emma / minho">
+      </div>
+      <div class="lf">
+        <label>비밀번호</label>
+        <input type="password" id="in-pass" placeholder="비밀번호">
+      </div>
+      <div class="lf">
+        <label>자동 번역</label>
+        <select id="in-lang" style="width:100%;background:#0f1e3a;border:1px solid #1e3060;border-radius:6px;padding:8px 11px;color:#e0e0e0;font-size:0.88rem;">
+          <option value="">끄기 (원문만)</option>
+          <option value="ko">한국어로 번역</option>
+          <option value="en" selected>영어로 번역</option>
+          <option value="ja">일본어로 번역</option>
+          <option value="zh-CN">중국어(간체)로 번역</option>
+          <option value="es">스페인어로 번역</option>
+        </select>
+      </div>
+      <div class="lf">
+        <label>서버</label>
+        <input type="text" id="in-url" value="ws://localhost:5280/ws-xmpp">
+      </div>
+      <div class="lerr" id="err"></div>
+      <button class="btn-login" id="btn-login">접속</button>
+    </div>
+  </div>
+
+  <!-- 채팅 리스트 뷰 -->
+  <div class="list-view" id="list-view">
+    <div class="list-toolbar">
+      <div class="me">
+        <div class="me-av" id="me-av"></div>
+        <div class="me-info">
+          <div class="me-name" id="me-name"></div>
+          <div class="me-jid"  id="me-jid"></div>
+        </div>
+      </div>
+      <button class="btn-new-chat" id="btn-new-chat">+ 새 채팅</button>
+      <button class="btn-logout" id="btn-logout">나가기</button>
+    </div>
+    <div class="chat-list" id="chat-list"></div>
+    <div class="log-toggle" id="log-toggle">▸ XML 로그</div>
+    <div class="log-box" id="log-box"></div>
+  </div>
+
+  <!-- 채팅 뷰 -->
+  <div class="chat-ui" id="chat">
+    <div class="chat-header">
+      <button class="btn-back" id="btn-back" title="목록으로">←</button>
+      <div class="ch-info">
+        <div class="ch-name" id="ch-name"></div>
+        <div class="ch-sub"  id="ch-sub"></div>
+      </div>
+      <button class="btn-leave" id="btn-leave" style="display:none">나가기</button>
+    </div>
+    <div class="messages" id="messages"></div>
+    <div class="input-area">
+      <input type="file" id="file-input" accept="image/*" style="display:none">
+      <button class="btn-attach" id="btn-attach" disabled title="이미지 첨부">📎</button>
+      <textarea class="msg-input" id="msg-input" rows="1"
+        placeholder="메시지 입력 (Enter 전송, Shift+Enter 줄바꿈)" disabled></textarea>
+      <button class="btn-send" id="send" disabled>➤</button>
+    </div>
+  </div>
+
+  <!-- 새 채팅 모달 -->
+  <div class="modal-mask" id="modal-new-chat">
+    <div class="modal-card">
+      <h3>새 채팅</h3>
+      <p class="sub">한 명 선택 = 1:1, 두 명 이상 = 단톡</p>
+      <div id="modal-member-list"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="btn-modal-cancel">취소</button>
+        <button class="btn-create" id="btn-modal-create" disabled>만들기</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+//  단일 XMPP 클라이언트 (이 탭에서만 동작, 탭마다 독립)
+// ════════════════════════════════════════════════════════════════
+(function () {
+  const $ = id => document.getElementById(id);
+
+  // ── 상태 ─────────────────────────────────────────────────
+  let ws = null, state = 'IDLE', domain = 'localhost';
+  let myJid = null, myUser = null, msgIdCnt = 0;
+  let logOpen = false;
+  let keepaliveTimer = null;
+  let translateTarget = '';   // 빈 문자열 = 번역 끔
+
+  // 화면 상태: 'login' | 'list' | 'chat'
+  let viewState = 'login';
+  let currentChatId = null;   // 'chat' 화면일 때 활성 채팅 ID
+
+  // 모든 채팅: chatId → { id, type, name, members, messages, historyLoaded }
+  //   1:1 → chatId = peer bare JID,         type='1on1'
+  //   단톡 → chatId = room@muclight.localhost, type='group'
+  const chats = new Map();
+
+  // 알려진 사용자 목록 (1:1/단톡 멤버 선택용)
+  const KNOWN_USERS = ['jihoon', 'emma', 'minho'];
+
+  // JID local-part → 화면 표시명 매핑
+  const DISPLAY_NAMES = { jihoon: '지훈', emma: 'Emma', minho: '민호' };
+  const displayName = u => DISPLAY_NAMES[u] || u;
+  // 표시명 → JID local-part (사용자가 한글로 입력한 경우 역변환)
+  const usernameOf = n => {
+    const hit = Object.entries(DISPLAY_NAMES).find(([, dn]) => dn === n);
+    return hit ? hit[0] : n;
+  };
+
+  // ── 1:1 채팅 "나간 시점" 저장 (localStorage) ───────────
+  // 키 형태: leftAt:<myUser>:<peerJid>  → ISO 타임스탬프
+  // 효과: 이 시점 이전 메시지는 MAM 쿼리에서 제외 + 채팅 리스트에서 자동 제거
+  const leftAtKey = peerJid => `leftAt:${myUser}:${peerJid}`;
+  const getLeftAt = peerJid => localStorage.getItem(leftAtKey(peerJid));
+  const setLeftAt = peerJid => localStorage.setItem(leftAtKey(peerJid), new Date().toISOString());
+  const clearLeftAt = peerJid => localStorage.removeItem(leftAtKey(peerJid));
+
+  const nextId = () => `m${++msgIdCnt}`;
+  const mucDomain = () => `muclight.${domain}`;
+  const isMucRoomJid = jid => (jid || '').endsWith('@' + mucDomain());
+
+  // ── DOM 참조 ─────────────────────────────────────────────
+  const loginCard  = $('login-card');
+  const listView   = $('list-view');
+  const chatUi     = $('chat');
+  const errEl      = $('err');
+  const btnLogin   = $('btn-login');
+  const btnLogout  = $('btn-logout');
+  const messagesEl = $('messages');
+  const inputEl    = $('msg-input');
+  const sendBtn    = $('send');
+  const logBox     = $('log-box');
+  const logToggle  = $('log-toggle');
+  const fileInput  = $('file-input');
+  const btnAttach  = $('btn-attach');
+  const chatListEl = $('chat-list');
+  const btnNewChat = $('btn-new-chat');
+  const btnBack    = $('btn-back');
+  const btnLeave   = $('btn-leave');
+  const chNameEl   = $('ch-name');
+  const chSubEl    = $('ch-sub');
+  const modalNew   = $('modal-new-chat');
+  const modalList  = $('modal-member-list');
+  const btnMCancel = $('btn-modal-cancel');
+  const btnMCreate = $('btn-modal-create');
+
+  // 진행 중인 업로드 슬롯 요청: id -> { file, chatId, fileName, fileType }
+  const pendingUploads = new Map();
+  // 진행 중인 MAM 쿼리: queryId -> chatId
+  const pendingMam = new Map();
+  // 디스코 쿼리 추적용: iqId -> 'rooms'
+  const pendingDisco = new Map();
+
+  // ── 이벤트 바인딩 ────────────────────────────────────────
+  document.querySelectorAll('.q-btn').forEach(btn => {
+    btn.onclick = () => {
+      const u = btn.dataset.fill;
+      $('in-user').value = u;
+      $('in-pass').value = `${u}123`;
+    };
+  });
+
+  btnLogin.onclick = doLogin;
+  $('in-pass').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
+
+  btnLogout.onclick = doLogout;
+
+  inputEl.onkeydown = e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+  };
+  inputEl.oninput = () => autoResize(inputEl);
+
+  sendBtn.onclick = doSend;
+
+  btnAttach.onclick = () => fileInput.click();
+  fileInput.onchange = () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+    doUpload(file);
+  };
+
+  btnBack.onclick = () => showList();
+  btnLeave.onclick = () => doLeaveCurrent();
+  btnNewChat.onclick = () => openNewChatModal();
+  btnMCancel.onclick = () => modalNew.classList.remove('visible');
+  btnMCreate.onclick = () => doCreateChatFromModal();
+
+  logToggle.onclick = () => {
+    logOpen = !logOpen;
+    logBox.classList.toggle('open', logOpen);
+    logToggle.textContent = (logOpen ? '▾' : '▸') + ' XML 로그';
+  };
+
+  // ── XMPP 스탠자 ──────────────────────────────────────────
+  const stanzaOpen = d =>
+    `<open xmlns='urn:ietf:params:xml:ns:xmpp-framing' to='${d}' version='1.0' xml:lang='en'/>`;
+
+  const stanzaAuth = (u, p) => {
+    const raw = '\x00' + u + '\x00' + p;
+    return btoa(Array.from(raw).map(c => String.fromCharCode(c.charCodeAt(0) & 0xff)).join(''));
+  };
+
+  const stanzaBind = res =>
+    `<iq type='set' id='${nextId()}' xmlns='jabber:client'>`
+    + `<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><resource>browser-${Math.random().toString(36).slice(2,8)}</resource></bind></iq>`;
+
+  const stanzaMsg = (to, body, type = 'chat') =>
+    `<message to='${x(to)}' type='${type}' id='${nextId()}' xmlns='jabber:client'>`
+    + `<body>${x(body)}</body></message>`;
+
+  // 이미지/파일 메시지: body에 URL 그대로 + OOB 확장(jabber:x:oob)
+  const stanzaImageMsg = (to, url, type = 'chat') =>
+    `<message to='${x(to)}' type='${type}' id='${nextId()}' xmlns='jabber:client'>`
+    + `<body>${x(url)}</body>`
+    + `<x xmlns='jabber:x:oob'><url>${x(url)}</url></x>`
+    + `</message>`;
+
+  // MUC Light 단톡방 생성 (멤버 자동 초대)
+  const stanzaCreateRoom = (memberJids, roomName) => {
+    const occupants = memberJids
+      .map(jid => `<user affiliation='member'>${x(jid)}</user>`).join('');
+    const cfg = roomName
+      ? `<configuration><roomname>${x(roomName)}</roomname></configuration>`
+      : `<configuration/>`;
+    return `<iq type='set' id='${nextId()}' to='${x(mucDomain())}' xmlns='jabber:client'>`
+      + `<query xmlns='urn:xmpp:muclight:0#create'>${cfg}<occupants>${occupants}</occupants></query></iq>`;
+  };
+
+  // 단톡방 나가기 (자기 affiliation을 none으로)
+  const stanzaLeaveRoom = roomJid =>
+    `<iq type='set' id='${nextId()}' to='${x(roomJid)}' xmlns='jabber:client'>`
+    + `<query xmlns='urn:xmpp:muclight:0#affiliations'>`
+    + `<user affiliation='none'>${x(toBare(myJid))}</user>`
+    + `</query></iq>`;
+
+  // 가입한 방 목록 조회
+  const stanzaJoinedRooms = id =>
+    `<iq type='get' id='${x(id)}' to='${x(mucDomain())}' xmlns='jabber:client'>`
+    + `<query xmlns='http://jabber.org/protocol/disco#items'/></iq>`;
+
+  // 특정 방의 멤버(affiliation) 조회
+  const stanzaRoomAffiliations = (roomJid, id) =>
+    `<iq type='get' id='${x(id)}' to='${x(roomJid)}' xmlns='jabber:client'>`
+    + `<query xmlns='urn:xmpp:muclight:0#affiliations'/></iq>`;
+
+  // 방 설정(이름) 조회
+  const stanzaRoomConfig = (roomJid, id) =>
+    `<iq type='get' id='${x(id)}' to='${x(roomJid)}' xmlns='jabber:client'>`
+    + `<query xmlns='urn:xmpp:muclight:0#configuration'/></iq>`;
+
+  // 한글/공백 등 비ASCII 파일명은 S3 사인드 URL 서명-인코딩 불일치 유발 → ASCII로 정규화
+  function safeFilename(name) {
+    const m = String(name || '').match(/\.[a-zA-Z0-9]{1,8}$/);
+    const ext = m ? m[0].toLowerCase() : '';
+    const base = (m ? name.slice(0, m.index) : name)
+      .replace(/[^A-Za-z0-9_-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 60) || 'file';
+    return base + ext;
+  }
+
+  const stanzaUploadSlot = (id, file, safeName) =>
+    `<iq type='get' id='${x(id)}' to='upload.${x(domain)}' xmlns='jabber:client'>`
+    + `<request xmlns='urn:xmpp:http:upload:0' `
+    + `filename='${x(safeName)}' size='${file.size}' `
+    + `content-type='${x(file.type || 'application/octet-stream')}'/></iq>`;
+
+  const stanzaPresence = () => `<presence xmlns='jabber:client'/>`;
+  const stanzaSubscribe   = to => `<presence to='${x(to)}' type='subscribe' xmlns='jabber:client'/>`;
+  const stanzaSubscribed  = to => `<presence to='${x(to)}' type='subscribed' xmlns='jabber:client'/>`;
+
+  function wsSend(xml) {
+    addLog('s', xml);
+    ws.send(xml);
+  }
+
+  // ── 로그인 ───────────────────────────────────────────────
+  function doLogin() {
+    const user = $('in-user').value.trim();
+    const pass = $('in-pass').value.trim();
+    const url  = $('in-url').value.trim();
+    translateTarget = $('in-lang').value;
+    if (!user || !pass) { setErr('사용자명과 비밀번호를 입력하세요.'); return; }
+
+    myUser = usernameOf(user);   // 한글 닉으로 입력해도 username으로 변환
+    domain = 'localhost';
+
+    setErr('연결 중...');
+    btnLogin.disabled = true;
+
+    ws = new WebSocket(url, ['xmpp']);
+    ws.onopen = () => {
+      wsSend(stanzaOpen(domain));
+      state = 'STREAM_OPENED';
+    };
+    ws.onmessage = e => handleXmpp(e.data);
+    ws.onerror   = () => {
+      setErr('연결 실패 — 서버를 확인하세요.');
+      btnLogin.disabled = false;
+    };
+    ws.onclose = e => {
+      addLog('i', `WS closed code=${e.code}`);
+      if (keepaliveTimer) { clearInterval(keepaliveTimer); keepaliveTimer = null; }
+      if (state !== 'READY') {
+        setErr('연결이 끊겼습니다.');
+        btnLogin.disabled = false;
+      } else {
+        showLogin();
+      }
+      state = 'IDLE';
+    };
+  }
+
+  function handleXmpp(xml) {
+    addLog('r', xml);
+
+    if (state === 'STREAM_OPENED' && xml.includes('urn:ietf:params:xml:ns:xmpp-sasl')) {
+      const pass  = $('in-pass').value.trim();
+      const token = stanzaAuth(myUser, pass);
+      wsSend(`<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>${token}</auth>`);
+      state = 'AUTHENTICATING';
+      return;
+    }
+
+    if (state === 'AUTHENTICATING') {
+      if (xml.includes('<success')) {
+        state = 'AUTHENTICATED';
+        wsSend(stanzaOpen(domain));
+        return;
+      }
+      if (xml.includes('<failure')) {
+        setErr('인증 실패 — 사용자명/비밀번호를 확인하세요.');
+        btnLogin.disabled = false;
+        ws.close();
+        return;
+      }
+    }
+
+    if (state === 'AUTHENTICATED' && xml.includes('urn:ietf:params:xml:ns:xmpp-bind')) {
+      wsSend(stanzaBind());
+      state = 'BINDING';
+      return;
+    }
+
+    if (state === 'BINDING') {
+      const m = xml.match(/<jid>([^<]+)<\/jid>/);
+      if (m) {
+        myJid = m[1];
+        wsSend(`<iq type='set' id='${nextId()}' xmlns='jabber:client'><session xmlns='urn:ietf:params:xml:ns:xmpp-session'/></iq>`);
+        state = 'SESSION';
+        return;
+      }
+    }
+
+    if (state === 'SESSION') {
+      if (xml.includes('type=\'result\'') || xml.includes('type="result"')) {
+        state = 'READY';
+        onReady();
+      }
+      return;
+    }
+
+    if (state !== 'READY') return;
+
+    // IQ ping 응답
+    if (xml.includes('urn:xmpp:ping') && (xml.includes("type='get'") || xml.includes('type="get"'))) {
+      const idM = xml.match(/id=['"]([^'"]+)['"]/);
+      if (idM) wsSend(`<iq type='result' id='${idM[1]}' xmlns='jabber:client'/>`);
+      return;
+    }
+
+    // HTTP Upload 슬롯 응답 (XEP-0363)
+    if (xml.includes('urn:xmpp:http:upload:0')) {
+      const idM = xml.match(/id=['"]([^'"]+)['"]/);
+      if (idM && pendingUploads.has(idM[1])) {
+        const ctx = pendingUploads.get(idM[1]);
+        pendingUploads.delete(idM[1]);
+
+        if (xml.includes("type='error'") || xml.includes('type="error"')) {
+          const textM = xml.match(/<text[^>]*>([^<]+)<\/text>/);
+          addSys('⚠ 업로드 슬롯 거부됨' + (textM ? `: ${textM[1]}` : ''));
+          return;
+        }
+
+        const putM = xml.match(/<put[^>]*\surl=['"]([^'"]+)['"]/);
+        const getM = xml.match(/<get[^>]*\surl=['"]([^'"]+)['"]/);
+        if (!putM || !getM) { addSys('⚠ 업로드 슬롯 응답 파싱 실패'); return; }
+
+        const headers = {};
+        const headerRe = /<header\s+name=['"]([^'"]+)['"][^>]*>([^<]*)<\/header>/g;
+        let hm;
+        while ((hm = headerRe.exec(xml))) headers[hm[1]] = decodeXmlEntities(hm[2]);
+
+        const putUrl = decodeXmlEntities(putM[1]);
+        const getUrl = decodeXmlEntities(getM[1]);
+
+        httpPut(putUrl, headers, ctx.file)
+          .then(() => {
+            const chat = chats.get(ctx.chatId);
+            const msgType = (chat && chat.type === 'group') ? 'groupchat' : 'chat';
+            wsSend(stanzaImageMsg(ctx.chatId, getUrl, msgType));
+            // 1:1는 자기 메시지가 서버에서 안 돌아오므로 즉시 렌더, 단톡은 echo로 옴
+            if (msgType === 'chat') {
+              addMessage(ctx.chatId, { from: myJid, body: getUrl, time: nowStr(), out: true });
+            }
+          })
+          .catch(err => addSys('⚠ 업로드 실패: ' + (err.message || err)));
+        return;
+      }
+    }
+
+    // MUC Light: 가입한 방 목록 (disco#items 응답)
+    {
+      const idM = xml.match(/id=['"]([^'"]+)['"]/);
+      if (idM && pendingDisco.get(idM[1]) === 'rooms' && xml.includes('disco#items')) {
+        pendingDisco.delete(idM[1]);
+        const itemRe = /<item[^>]*\sjid=['"]([^'"]+)['"][^>]*(?:\sname=['"]([^'"]*)['"])?[^>]*\/?>/g;
+        let m;
+        while ((m = itemRe.exec(xml))) {
+          const roomJid = m[1];
+          const roomName = m[2] || nick(roomJid);
+          if (!chats.has(roomJid)) {
+            chats.set(roomJid, {
+              id: roomJid, type: 'group', name: roomName,
+              members: [], messages: [], historyLoaded: false,
+            });
+            // 멤버 목록 + 방 설정(이름) 조회
+            const affId = `aff${++msgIdCnt}`;
+            pendingDisco.set(affId, 'aff:' + roomJid);
+            wsSend(stanzaRoomAffiliations(roomJid, affId));
+            const cfgId = `cfg${++msgIdCnt}`;
+            pendingDisco.set(cfgId, 'cfg:' + roomJid);
+            wsSend(stanzaRoomConfig(roomJid, cfgId));
+          }
+        }
+        renderChatList();
+        return;
+      }
+      // MUC Light: 멤버 목록 응답
+      if (idM && pendingDisco.has(idM[1]) && pendingDisco.get(idM[1]).startsWith('aff:')) {
+        const roomJid = pendingDisco.get(idM[1]).slice(4);
+        pendingDisco.delete(idM[1]);
+        const chat = chats.get(roomJid);
+        if (chat) {
+          chat.members = parseAffiliations(xml);
+          renderChatList();
+          if (currentChatId === roomJid) updateChatHeader(chat);
+        }
+        return;
+      }
+      // MUC Light: 방 설정(이름) 응답
+      if (idM && pendingDisco.has(idM[1]) && pendingDisco.get(idM[1]).startsWith('cfg:')) {
+        const roomJid = pendingDisco.get(idM[1]).slice(4);
+        pendingDisco.delete(idM[1]);
+        const chat = chats.get(roomJid);
+        if (chat) {
+          const nameM = xml.match(/<roomname>([^<]+)<\/roomname>/);
+          if (nameM) chat.name = decodeXmlEntities(nameM[1]);
+          renderChatList();
+          if (currentChatId === roomJid) updateChatHeader(chat);
+        }
+        return;
+      }
+    }
+
+    // MAM 종료 IQ
+    if (xml.includes("<fin") && xml.includes("urn:xmpp:mam:2")) {
+      const idM = xml.match(/id=['"]([^'"]+)['"]/);
+      if (idM && pendingMam.has(idM[1])) {
+        flushArchive(idM[1]);
+        return;
+      }
+    }
+    // MAM 아카이브 메시지 (forwarded)
+    if (xml.includes("<result") && xml.includes("urn:xmpp:mam:2")) {
+      const qM = xml.match(/queryid=['"]([^'"]+)['"]/);
+      if (qM && pendingMam.has(qM[1])) { collectArchive(qM[1], xml); return; }
+    }
+
+    // MUC Light affiliation 이벤트 (방 생성/멤버 변경/탈퇴 시 서버가 푸시)
+    if (xml.includes("urn:xmpp:muclight:0#affiliations") && xml.includes('<message')) {
+      handleMucAffiliationEvent(xml);
+      return;
+    }
+
+    // presence (1:1 친구 요청 자동 수락만)
+    if (xml.includes('<presence')) {
+      const fromM = xml.match(/from=['"]([^'"]+)['"]/);
+      if (!fromM) return;
+      const bare = toBare(fromM[1]);
+      if (bare === toBare(myJid)) return;
+      const type = (xml.match(/type=['"]([^'"]+)['"]/) || [])[1] || 'available';
+      if (type === 'subscribe') {
+        wsSend(stanzaSubscribed(bare));
+        wsSend(stanzaSubscribe(bare));
+        wsSend(stanzaPresence());
+      }
+      return;
+    }
+
+    // 메시지
+    if (xml.includes('<message')) {
+      if (xml.includes("type='error'") || xml.includes('type="error"')) {
+        const condM = xml.match(/<([a-z][\w-]*)\s+xmlns=["']urn:ietf:params:xml:ns:xmpp-stanzas["']\s*\/?>/);
+        addSys(`⚠ 메시지 전달 실패: ${condM ? condM[1] : '알 수 없음'}`);
+        addLog('e', xml);
+        return;
+      }
+      const isGroup = xml.includes("type='groupchat'") || xml.includes('type="groupchat"');
+      const fromM = xml.match(/from=['"]([^'"]+)['"]/);
+      const bodyM = xml.match(/<body>([^<]*)<\/body>/);
+      if (!bodyM || !fromM) return;
+
+      const fromFull = fromM[1];
+      const fromBare = toBare(fromFull);
+      const fromResource = fromFull.includes('/') ? fromFull.split('/')[1] : '';
+      const delayM = xml.match(/<delay[^>]*\sstamp=['"]([^'"]+)['"]/);
+      const timeStr = delayM ? fmtStamp(delayM[1]) : nowStr();
+      const body = decodeXmlEntities(bodyM[1]);
+      if (!body.trim()) return;   // 빈 본문(affiliation 알림 등)은 무시
+
+      if (isGroup) {
+        // 단톡 메시지: chatId = 방 JID, 발신자 = resource (보통 user@server)
+        const roomJid = fromBare;
+        let chat = chats.get(roomJid);
+        if (!chat) {
+          chat = { id: roomJid, type: 'group', name: nick(roomJid),
+                   members: [], messages: [], historyLoaded: false };
+          chats.set(roomJid, chat);
+        }
+        // resource가 발신자 bare JID
+        const senderBare = fromResource && fromResource.includes('@') ? toBare(fromResource) : fromResource || roomJid;
+        const out = senderBare === toBare(myJid);
+        addMessage(roomJid, { from: senderBare, body, time: timeStr, out });
+      } else {
+        // 1:1: 발신자 bare JID가 chatId
+        const peerBare = fromBare;
+        let chat = chats.get(peerBare);
+        if (!chat) {
+          chat = { id: peerBare, type: '1on1', name: displayName(nick(peerBare)),
+                   members: [peerBare], messages: [], historyLoaded: false };
+          chats.set(peerBare, chat);
+        }
+        addMessage(peerBare, { from: peerBare, body, time: timeStr, out: false });
+      }
+      renderChatList();
+    }
+  }
+
+  // MUC Light affiliation 이벤트 처리
+  function handleMucAffiliationEvent(xml) {
+    const fromM = xml.match(/from=['"]([^'"]+)['"]/);
+    if (!fromM) return;
+    const roomJid = toBare(fromM[1]);
+
+    // 변경된 사용자 목록 파싱
+    const userRe = /<user\s+affiliation=['"]([^'"]+)['"][^>]*>([^<]+)<\/user>/g;
+    let um;
+    const changes = [];
+    while ((um = userRe.exec(xml))) changes.push({ aff: um[1], jid: toBare(um[2]) });
+    if (changes.length === 0) return;
+
+    const myBare = toBare(myJid);
+    const meChange = changes.find(c => c.jid === myBare);
+
+    // 본인이 'none' 처리됨 = 강퇴/탈퇴
+    if (meChange && meChange.aff === 'none') {
+      if (chats.has(roomJid)) {
+        chats.delete(roomJid);
+        if (currentChatId === roomJid) showList();
+        renderChatList();
+      }
+      return;
+    }
+
+    // 본인이 'owner'/'member' 처리됨 = 방 가입
+    if (meChange && (meChange.aff === 'owner' || meChange.aff === 'member')) {
+      if (!chats.has(roomJid)) {
+        // 방 정보(이름) + 전체 멤버 다시 조회
+        chats.set(roomJid, {
+          id: roomJid, type: 'group', name: nick(roomJid),
+          members: [], messages: [], historyLoaded: false,
+        });
+        const cfgId = `cfg${++msgIdCnt}`;
+        pendingDisco.set(cfgId, 'cfg:' + roomJid);
+        wsSend(stanzaRoomConfig(roomJid, cfgId));
+        const affId = `aff${++msgIdCnt}`;
+        pendingDisco.set(affId, 'aff:' + roomJid);
+        wsSend(stanzaRoomAffiliations(roomJid, affId));
+      }
+      renderChatList();
+      return;
+    }
+
+    // 다른 사람의 affiliation 변경 → 멤버 목록 갱신
+    const chat = chats.get(roomJid);
+    if (!chat) return;
+    for (const c of changes) {
+      const idx = chat.members.indexOf(c.jid);
+      if (c.aff === 'none') {
+        if (idx >= 0) chat.members.splice(idx, 1);
+      } else {
+        if (idx < 0) chat.members.push(c.jid);
+      }
+    }
+    renderChatList();
+    if (currentChatId === roomJid) updateChatHeader(chat);
+  }
+
+  function parseAffiliations(xml) {
+    const arr = [];
+    const re = /<user\s+affiliation=['"]([^'"]+)['"][^>]*>([^<]+)<\/user>/g;
+    let m;
+    while ((m = re.exec(xml))) arr.push(toBare(m[2]));
+    return arr;
+  }
+
+  function onReady() {
+    const myDisplay = displayName(myUser);
+    $('me-av').textContent   = myDisplay[0].toUpperCase();
+    $('me-name').textContent = myDisplay;
+    $('me-jid').textContent  = myJid;
+    document.title = `${myDisplay} — XMPP Chat`;
+
+    // 1:1 채팅 자동 채움 — 단, 나간 적 있는 채팅은 제외
+    KNOWN_USERS.filter(u => u !== myUser).forEach(u => {
+      const peerJid = `${u}@${domain}`;
+      if (chats.has(peerJid)) return;
+      if (getLeftAt(peerJid)) return;   // 나간 사람은 자동 추가 안 함
+      chats.set(peerJid, {
+        id: peerJid, type: '1on1', name: displayName(u),
+        members: [peerJid], messages: [], historyLoaded: false,
+      });
+    });
+
+    showList();
+    wsSend(stanzaPresence());
+
+    // 가입한 단톡방 목록 조회
+    const discoId = `dq${++msgIdCnt}`;
+    pendingDisco.set(discoId, 'rooms');
+    wsSend(stanzaJoinedRooms(discoId));
+
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
+    keepaliveTimer = setInterval(() => {
+      if (state === 'READY' && ws && ws.readyState === WebSocket.OPEN) {
+        wsSend(`<iq type='get' id='${nextId()}' to='${domain}' xmlns='jabber:client'><ping xmlns='urn:xmpp:ping'/></iq>`);
+      }
+    }, 50000);
+  }
+
+  // ── 파일/이미지 업로드 (XEP-0363) ──────────────────
+  async function doUpload(file) {
+    if (state !== 'READY' || !currentChatId) { addSys('⚠ 채팅창을 먼저 여세요.'); return; }
+    if (file.size > 10 * 1024 * 1024) {
+      addSys(`⚠ 파일 크기 10MB 초과: ${(file.size/1024/1024).toFixed(1)}MB`);
+      return;
+    }
+    const id = `up${++msgIdCnt}`;
+    const safeName = safeFilename(file.name);
+    pendingUploads.set(id, { file, chatId: currentChatId, safeName });
+    addSys(`📎 ${file.name} (${(file.size/1024).toFixed(1)} KB) 업로드 중…`);
+    wsSend(stanzaUploadSlot(id, file, safeName));
+  }
+
+  async function httpPut(url, headers, file) {
+    const h = { ...headers };
+    if (!h['Content-Type'] && !h['content-type']) {
+      h['Content-Type'] = file.type || 'application/octet-stream';
+    }
+    const res = await fetch(url, { method: 'PUT', headers: h, body: file });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      console.error('[upload] PUT URL:', url);
+      console.error('[upload] PUT headers:', h);
+      console.error('[upload] file:', file.name, file.type, file.size);
+      console.error('[upload] response body:', txt);
+      throw new Error(`HTTP ${res.status} ${txt.slice(0, 800)}`);
+    }
+  }
+
+  function decodeXmlEntities(s) {
+    return String(s)
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'");
+  }
+
+  function isImageUrl(s) {
+    return /^https?:\/\/\S+?\.(png|jpe?g|gif|webp|bmp)(\?\S*)?$/i.test(s || '');
+  }
+
+  // ── MAM (XEP-0313) — 채팅별로 히스토리 조회 ───────
+  function loadHistoryFor(chat) {
+    if (!chat || chat.historyLoaded) return;
+    chat.historyLoaded = true;
+    const queryId = `mam${++msgIdCnt}`;
+    pendingMam.set(queryId, { chatId: chat.id, type: chat.type, archived: [] });
+    const filterField = chat.type === 'group'
+      ? ''   // 단톡: 방을 통한 조회는 IQ를 방 JID로 직접 보냄
+      : `<field var='with'><value>${x(chat.id)}</value></field>`;
+    // 1:1에서 "나간 적이 있는" 채팅이면 그 시점 이후 메시지만 조회
+    const leftAt = chat.type === '1on1' ? getLeftAt(chat.id) : null;
+    const startField = leftAt ? `<field var='start'><value>${x(leftAt)}</value></field>` : '';
+    const targetTo = chat.type === 'group' ? ` to='${x(chat.id)}'` : '';
+    wsSend(
+      `<iq type='set' id='${queryId}'${targetTo} xmlns='jabber:client'>`
+      + `<query xmlns='urn:xmpp:mam:2' queryid='${queryId}'>`
+      + `<x xmlns='jabber:x:data' type='submit'>`
+      + `<field var='FORM_TYPE' type='hidden'><value>urn:xmpp:mam:2</value></field>`
+      + filterField + startField
+      + `</x>`
+      + `<set xmlns='http://jabber.org/protocol/rsm'><max>30</max><before/></set>`
+      + `</query></iq>`
+    );
+  }
+
+  function collectArchive(queryId, xml) {
+    const ctx = pendingMam.get(queryId);
+    if (!ctx) return;
+    const fwM = xml.match(/<forwarded[^>]*>([\s\S]*?)<\/forwarded>/);
+    if (!fwM) return;
+    const inner = fwM[1];
+    const stampM = inner.match(/<delay[^>]*\sstamp=['"]([^'"]+)['"]/);
+    const innerMsgM = inner.match(/<message\b([^>]*)>([\s\S]*?)<\/message>/);
+    if (!innerMsgM) return;
+    const attrs = innerMsgM[1];
+    const msgBody = innerMsgM[2];
+    const fromM = attrs.match(/\sfrom=['"]([^'"]+)['"]/);
+    const bodyM = msgBody.match(/<body>([^<]*)<\/body>/);
+    if (!bodyM || !fromM) return;
+    const fromFull = fromM[1];
+    const fromBare = toBare(fromFull);
+    const fromResource = fromFull.includes('/') ? fromFull.split('/')[1] : '';
+    let senderBare;
+    if (ctx.type === 'group') {
+      // 단톡: from = room/sender, sender resource는 user@server
+      senderBare = fromResource && fromResource.includes('@') ? toBare(fromResource) : fromResource;
+    } else {
+      senderBare = fromBare;
+    }
+    ctx.archived.push({
+      from: senderBare,
+      body: decodeXmlEntities(bodyM[1]),
+      stamp: stampM ? stampM[1] : null,
+      out: senderBare === toBare(myJid),
+    });
+  }
+
+  function flushArchive(queryId) {
+    const ctx = pendingMam.get(queryId);
+    if (!ctx) return;
+    pendingMam.delete(queryId);
+    const chat = chats.get(ctx.chatId);
+    if (!chat) return;
+    ctx.archived.sort((a, b) => (a.stamp || '').localeCompare(b.stamp || ''));
+
+    // MAM 결과 + 기존 라이브 메시지 병합 (async writer 지연 대응)
+    // MAM이 아직 보유 안 한 라이브 메시지를 잃지 않게 (from+body로 중복 제거)
+    const archiveKeys = new Set(ctx.archived.map(m => `${m.from}|${m.body}`));
+    const livePreserved = chat.messages.filter(m => !archiveKeys.has(`${m.from}|${m.body}`));
+
+    chat.messages = ctx.archived.map(m => ({
+      from: m.from, body: m.body,
+      time: m.stamp ? fmtStamp(m.stamp) : nowStr(),
+      out: m.out,
+    })).concat(livePreserved);
+
+    // lastActivity 갱신 — MAM이든 라이브든 최신 기준
+    if (chat.messages.length > 0) {
+      const lastInArchive = ctx.archived[ctx.archived.length - 1];
+      const lastInLive = livePreserved[livePreserved.length - 1];
+      if (lastInLive) {
+        chat.lastActivity = Date.now();
+        chat.lastPreview = lastInLive.body.length > 30 ? lastInLive.body.slice(0, 30) + '…' : lastInLive.body;
+      } else if (lastInArchive) {
+        chat.lastActivity = lastInArchive.stamp ? new Date(lastInArchive.stamp).getTime() : Date.now();
+        chat.lastPreview = lastInArchive.body.length > 30 ? lastInArchive.body.slice(0, 30) + '…' : lastInArchive.body;
+      }
+    }
+    if (currentChatId === ctx.chatId) renderChatMessages(chat);
+    renderChatList();
+  }
+
+  function doSend() {
+    if (state !== 'READY' || !currentChatId) return;
+    const chat = chats.get(currentChatId);
+    if (!chat) return;
+    const body = inputEl.value.trim();
+    if (!body) return;
+    const msgType = chat.type === 'group' ? 'groupchat' : 'chat';
+    wsSend(stanzaMsg(chat.id, body, msgType));
+    // 1:1는 자기 메시지 echo가 안 옴 → 즉시 추가. 단톡은 서버가 echo 보내므로 거기서 추가.
+    if (msgType === 'chat') {
+      addMessage(chat.id, { from: myJid, body, time: nowStr(), out: true });
+    }
+    inputEl.value = '';
+    autoResize(inputEl);
+  }
+
+  function doLogout() {
+    if (keepaliveTimer) { clearInterval(keepaliveTimer); keepaliveTimer = null; }
+    if (ws) {
+      try { wsSend(`<close xmlns='urn:ietf:params:xml:ns:xmpp-framing'/>`); } catch(_){}
+      setTimeout(() => ws.close(), 200);
+    }
+    showLogin();
+  }
+
+  function showLogin() {
+    listView.classList.remove('visible');
+    chatUi.classList.remove('visible');
+    loginCard.style.display = 'flex';
+    btnLogin.disabled = false;
+    messagesEl.innerHTML = '';
+    chats.clear();
+    pendingUploads.clear();
+    pendingMam.clear();
+    pendingDisco.clear();
+    myJid = null; myUser = null; currentChatId = null;
+    inputEl.disabled = true;
+    sendBtn.disabled = true;
+    btnAttach.disabled = true;
+    document.title = 'XMPP Chat — MongooseIM';
+  }
+
+  // ── 화면 전환 ──────────────────────────────────────
+  function showList() {
+    viewState = 'list';
+    currentChatId = null;
+    loginCard.style.display = 'none';
+    chatUi.classList.remove('visible');
+    listView.classList.add('visible');
+    inputEl.disabled = true;
+    sendBtn.disabled = true;
+    btnAttach.disabled = true;
+    renderChatList();
+  }
+
+  function enterChat(chatId) {
+    const chat = chats.get(chatId);
+    if (!chat) return;
+    viewState = 'chat';
+    currentChatId = chatId;
+    chat.unread = 0;
+    listView.classList.remove('visible');
+    chatUi.classList.add('visible');
+    inputEl.disabled = false;
+    sendBtn.disabled = false;
+    btnAttach.disabled = false;
+    btnLeave.style.display = 'block';
+    btnLeave.textContent = chat.type === 'group' ? '나가기' : '채팅 나가기';
+    updateChatHeader(chat);
+    if (!chat.historyLoaded) loadHistoryFor(chat);
+    renderChatMessages(chat);
+  }
+
+  function updateChatHeader(chat) {
+    chNameEl.textContent = chat.name;
+    if (chat.type === 'group') {
+      const others = chat.members.filter(m => m !== toBare(myJid));
+      const memberStr = chat.members.map(j => displayName(nick(j))).join(', ');
+      chSubEl.textContent = `${chat.members.length}명 · ${memberStr}`;
+    } else {
+      chSubEl.textContent = chat.id;
+    }
+  }
+
+  function renderChatList() {
+    chatListEl.innerHTML = '';
+    const sorted = Array.from(chats.values()).sort((a, b) => {
+      // 최근 활동 순 (활동 있는 채팅 먼저)
+      const ta = a.lastActivity || 0;
+      const tb = b.lastActivity || 0;
+      if (ta !== tb) return tb - ta;
+      // 둘 다 활동 없으면 단톡 → 1:1, 같은 종류는 이름순
+      if (a.type !== b.type) return a.type === 'group' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    if (sorted.length === 0) {
+      chatListEl.innerHTML = `<div class="chat-list-empty">아직 채팅이 없어요.<br>'+ 새 채팅' 으로 시작해보세요.</div>`;
+      return;
+    }
+    for (const chat of sorted) {
+      const row = document.createElement('div');
+      row.className = `chat-item ${chat.type === 'group' ? 'group' : ''}`;
+      const initial = (chat.name[0] || '?').toUpperCase();
+      const sub = chat.lastPreview
+        ? chat.lastPreview
+        : (chat.type === 'group' ? `${chat.members.length}명 단톡` : '1:1 채팅');
+      const timeStr = chat.lastActivity ? fmtRelative(chat.lastActivity) : '';
+      const unread = chat.unread || 0;
+      row.innerHTML = `
+        <div class="chat-av">${escHtml(initial)}</div>
+        <div class="chat-info">
+          <div class="chat-name">${escHtml(chat.name)}</div>
+          <div class="chat-sub">${escHtml(sub)}</div>
+        </div>
+        <div class="chat-meta">
+          ${timeStr ? `<div class="chat-time">${escHtml(timeStr)}</div>` : ''}
+          ${unread > 0 ? `<div class="chat-badge">${unread > 99 ? '99+' : unread}</div>` : ''}
+        </div>
+      `;
+      row.onclick = () => enterChat(chat.id);
+      chatListEl.appendChild(row);
+    }
+  }
+
+  // 상대 시간 포맷: 방금/n분/n시간/요일/날짜
+  function fmtRelative(ts) {
+    const now = Date.now();
+    const diff = Math.max(0, now - ts);
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return '방금';
+    if (m < 60) return `${m}분 전`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}시간 전`;
+    const d = new Date(ts);
+    const days = Math.floor((now - ts) / 86400000);
+    if (days < 7) {
+      return ['일','월','화','수','목','금','토'][d.getDay()] + '요일';
+    }
+    return `${d.getMonth()+1}/${d.getDate()}`;
+  }
+
+  function renderChatMessages(chat) {
+    messagesEl.innerHTML = '';
+    for (const m of chat.messages) renderMsg(m);
+  }
+
+  function addMessage(chatId, msg) {
+    const chat = chats.get(chatId);
+    if (!chat) return;
+    chat.messages.push(msg);
+    chat.lastActivity = Date.now();
+    chat.lastPreview = msg.body.length > 30 ? msg.body.slice(0, 30) + '…' : msg.body;
+    // 받은 메시지이고 현재 보고있지 않은 채팅이면 안읽음 +1
+    if (!msg.out && currentChatId !== chatId) {
+      chat.unread = (chat.unread || 0) + 1;
+    }
+    if (currentChatId === chatId) renderMsg(msg);
+    renderChatList();
+  }
+
+  function renderMsg({ from, body, time, out }) {
+    const row = document.createElement('div');
+    row.className = `msg-row ${out ? 'out' : 'in'}`;
+    const n = displayName(out ? nick(myJid) : nick(from || ''));
+    const idSuffix = ++msgIdCnt;
+    const bubbleId = `bub-${idSuffix}`;
+    const toggleId = `tog-${idSuffix}`;
+    const isImage = isImageUrl(body);
+    const needTrans = !out && translateTarget && !isImage;
+    const chat = chats.get(currentChatId);
+    const showSender = !out && chat && chat.type === 'group';
+
+    const bubbleContent = isImage
+      ? `<a href='${x(body)}' target='_blank' rel='noopener'><img class='chat-img' src='${x(body)}' alt='첨부 이미지'></a>`
+      : escHtml(body);
+
+    row.innerHTML = `
+      <div class="msg-av">${escHtml((n[0] || '?').toUpperCase())}</div>
+      <div class="bwrap">
+        ${showSender ? `<div style="font-size:0.7rem;color:#778;margin-bottom:2px;">${escHtml(n)}</div>` : ''}
+        <div class="bubble" id="${bubbleId}">${bubbleContent}</div>
+        ${needTrans ? `<div class="trans-toggle loading" id="${toggleId}">번역 중…</div>` : ''}
+        <div class="msg-time">${escHtml(time || '')}</div>
+      </div>
+    `;
+    messagesEl.appendChild(row);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (needTrans) translateMsg(body, translateTarget, bubbleId, toggleId);
+  }
+
+  // ── 새 채팅 모달 ─────────────────────────────────
+  function openNewChatModal() {
+    modalList.innerHTML = '';
+    const others = KNOWN_USERS.filter(u => u !== myUser);
+    for (const u of others) {
+      const row = document.createElement('label');
+      row.className = 'member-row';
+      row.innerHTML = `
+        <input type="checkbox" value="${escHtml(u)}">
+        <div class="member-av">${escHtml(displayName(u)[0])}</div>
+        <div class="member-name">${escHtml(displayName(u))}</div>
+      `;
+      modalList.appendChild(row);
+    }
+    modalList.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.onchange = () => {
+        const checked = modalList.querySelectorAll('input[type=checkbox]:checked').length;
+        btnMCreate.disabled = checked === 0;
+        btnMCreate.textContent = checked >= 2 ? '단톡방 만들기' : '1:1 채팅';
+      };
+    });
+    btnMCreate.disabled = true;
+    btnMCreate.textContent = '선택하세요';
+    modalNew.classList.add('visible');
+  }
+
+  function doCreateChatFromModal() {
+    const checked = Array.from(modalList.querySelectorAll('input[type=checkbox]:checked'))
+      .map(cb => cb.value);
+    if (checked.length === 0) return;
+    modalNew.classList.remove('visible');
+
+    if (checked.length === 1) {
+      // 1:1 — 카톡식 "새 채팅" = 지금 시점부터 시작 (이전 내역 표시 X)
+      const peer = `${checked[0]}@${domain}`;
+      setLeftAt(peer);   // 카톡처럼 "새 채팅"은 fresh slate
+      if (!chats.has(peer)) {
+        chats.set(peer, {
+          id: peer, type: '1on1', name: displayName(checked[0]),
+          members: [peer], messages: [], historyLoaded: false,
+        });
+      }
+      enterChat(peer);
+    } else {
+      // 단톡 생성 (서버에서 affiliation 이벤트가 와야 채팅 추가됨)
+      const memberJids = checked.map(u => `${u}@${domain}`);
+      const roomName = checked.map(u => displayName(u)).join(', ') + ' 단톡';
+      wsSend(stanzaCreateRoom(memberJids, roomName));
+      addSys(`단톡 생성 요청: ${roomName}`);
+    }
+  }
+
+  function doLeaveCurrent() {
+    if (!currentChatId) return;
+    const chat = chats.get(currentChatId);
+    if (!chat) return;
+
+    if (chat.type === 'group') {
+      if (!confirm(`'${chat.name}' 단톡방에서 나가시겠습니까? 대화 내역도 사라집니다.`)) return;
+      wsSend(stanzaLeaveRoom(chat.id));
+      // 서버 affiliation 이벤트가 'none'으로 와서 chats에서 제거하지만, UX 위해 즉시 처리
+      chats.delete(chat.id);
+      showList();
+      return;
+    }
+
+    // 1:1 — 클라이언트 사이드에서만 숨김 (서버 메시지는 그대로 보존, 상대방엔 영향 X)
+    if (!confirm(`'${chat.name}'와의 채팅을 나가시겠습니까?\n\n• 본인 화면에서만 채팅이 사라집니다.\n• 이전 대화 내역은 본인에게 더 이상 보이지 않습니다.\n• 상대방 화면에는 영향이 없습니다.\n• 새 메시지가 오면 채팅이 다시 나타나지만, 이전 내역은 안 보입니다.`)) return;
+    setLeftAt(chat.id);
+    chats.delete(chat.id);
+    showList();
+  }
+
+  async function translateMsg(original, target, bubbleId, toggleId) {
+    const bubble = document.getElementById(bubbleId);
+    const toggle = document.getElementById(toggleId);
+    if (!bubble || !toggle) return;
+
+    try {
+      const r = await fetch('/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: original, target }),
+      });
+      const data = await r.json();
+
+      if (data.error) {
+        toggle.textContent = `(번역 실패)`;
+        toggle.className = 'trans-toggle err';
+        return;
+      }
+      // 같은 언어면 번역 생략 (예: target=en인데 원문도 en)
+      if (data.detected === target || !data.translated || data.translated === original) {
+        toggle.remove();
+        return;
+      }
+
+      // 번역 성공: 버블을 번역문으로 교체, 토글로 원문/번역문 전환
+      let showingTranslated = true;
+      bubble.textContent = data.translated;
+      toggle.textContent = '원문 보기';
+      toggle.className = 'trans-toggle';
+      toggle.onclick = () => {
+        showingTranslated = !showingTranslated;
+        bubble.textContent = showingTranslated ? data.translated : original;
+        toggle.textContent = showingTranslated ? '원문 보기' : '번역 보기';
+      };
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    } catch (e) {
+      toggle.textContent = `(번역 오류)`;
+      toggle.className = 'trans-toggle err';
+    }
+  }
+
+  function addSys(text) {
+    const d = document.createElement('div');
+    d.className = 'sys-msg';
+    d.innerHTML = `<span>${escHtml(text)}</span>`;
+    messagesEl.appendChild(d);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function addLog(type, text) {
+    const d = document.createElement('div');
+    d.className = type;
+    d.textContent = (type === 's' ? '→ ' : type === 'r' ? '← ' : '  ') + text.substring(0, 240);
+    logBox.appendChild(d);
+    if (logOpen) logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  function setErr(msg) { errEl.textContent = msg; }
+  function toBare(jid) { return (jid || '').replace(/\/.*$/, ''); }
+  function nick(jid)   { return (jid || '').replace(/@.*$/, ''); }
+  function nowStr() {
+    const d = new Date();
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  function fmtStamp(stamp) {
+    try {
+      const d = new Date(stamp);
+      return `${pad(d.getHours())}:${pad(d.getMinutes())} (오프라인)`;
+    } catch { return nowStr(); }
+  }
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function x(s) { return escHtml(s); }
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }
+})();
+</script>
+</body>
+</html>

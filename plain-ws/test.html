@@ -1,0 +1,920 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Plain WS — 시연 패널</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 16px; background: #f5f5f5; }
+  h1 { margin: 0 0 6px; font-size: 20px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 14px; }
+
+  .row { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+  .row h3 { margin: 0 0 8px; font-size: 14px; color: #333; }
+
+  button { padding: 8px 14px; font-size: 13px; cursor: pointer; border: 1px solid #999; background: #fff; border-radius: 5px; margin-right: 6px; margin-bottom: 4px; }
+  button:hover { background: #eef; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: #4a90e2; color: white; border-color: #357abd; }
+  button.primary:hover { background: #3a7fc2; }
+  button.danger { background: #e74c3c; color: white; border-color: #c0392b; }
+
+  input[type="text"], input[type="password"], textarea, select {
+    padding: 7px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;
+    font-family: ui-monospace, "Consolas", monospace;
+  }
+  input[type="text"], input[type="password"] { width: 180px; }
+  label { font-size: 12px; color: #555; display: block; margin-bottom: 3px; }
+  .quick { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+  .quick > div { display: flex; flex-direction: column; }
+  .hint { font-size: 11px; color: #999; margin-top: 6px; }
+
+  /* 상단 상태바 */
+  #topbar { display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+            background: #2c3e50; color: #ecf0f1; padding: 10px 14px; border-radius: 8px;
+            font-family: ui-monospace, Consolas, monospace; font-size: 12px; margin-bottom: 12px; }
+  #topbar .chip { padding: 3px 8px; border-radius: 4px; background: #34495e; }
+  #topbar .chip.ok    { background: #27ae60; color: white; }
+  #topbar .chip.bad   { background: #c0392b; color: white; }
+  #topbar .chip.warn  { background: #e67e22; color: white; }
+  #topbar b { color: #f1c40f; }
+
+  /* 채팅 */
+  #chat { background:#fafafa; border:1px solid #e0e0e0; border-radius:6px; padding:12px;
+          min-height: 220px; max-height: 420px; overflow-y: auto;
+          display: flex; flex-direction: column; gap: 6px; }
+  #chatInputBar { display: flex; gap: 8px; margin-top: 10px; align-items: end; }
+  #chatInputBar input[type="text"] { flex: none; }
+  #chatBody { flex: 1; }
+
+  /* 시연 단계 */
+  .steps { background: #eef6ff; border: 1px solid #b6d4f5; border-radius: 6px; padding: 10px 14px; font-size: 12px; color: #2c3e50; }
+  .steps ol { margin: 4px 0 0; padding-left: 20px; }
+  .steps li { margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<h1>Plain WS — 시연 패널</h1>
+<div class="sub">로그인 → 자동 WS 접속/hello → 메시지 보내면 Redis가 어떻게 바뀌는지 한 화면에서 본다.
+서버 archive 없음 — 채팅 archive는 이 브라우저 localStorage, Redis는 세션/오프라인 큐만.</div>
+
+<!-- 상단 상태 -->
+<div id="topbar">
+  <span class="chip" id="topUser">user: <b>(로그인 전)</b></span>
+  <span class="chip" id="topDevice">device: -</span>
+  <span class="chip bad" id="topWs">plain-ws: CLOSED</span>
+  <span class="chip" id="topNotice">공지: OFF</span>
+  <span style="margin-left:auto;color:#bdc3c7">시연 메시지: 받는 사람이 오프라인이면 inbox에 적재 → 로그인 시 drain</span>
+</div>
+
+<!-- 시연 단계 안내 -->
+<div class="row steps">
+  <b>📋 시연 흐름</b>
+  <ol>
+    <li><b>jihoon</b> 로그인 → plain-ws 자동 접속 → <code>session:jihoon:dev*</code> + <code>online</code>에 jihoon 등장</li>
+    <li>다른 탭에서 또 <b>jihoon</b> 로그인 (같은 user, 다른 device) → <code>user_devices:jihoon</code> 2개 → 메시지 보내면 다른 디바이스에 carbon copy</li>
+    <li>로그인 안 한 <b>emma</b>에게 메시지 보내기 → <code>inbox:emma</code> List 적재 + TTL 7일</li>
+    <li>시크릿 탭에서 <b>emma</b> 로그인 → hello 직후 inbox drain → <code>inbox:emma</code> DEL</li>
+    <li>모든 jihoon 디바이스 닫기 → 마지막 디바이스 나가면 <code>online</code>에서 SREM + presence off</li>
+  </ol>
+</div>
+
+<!-- 0. 로그인 -->
+<div class="row" style="background:#f0fff4;border-color:#a8d8a8;">
+  <h3>0. 로그인 — Spring(:8081) JWT 발급 후 plain-ws 자동 접속</h3>
+  <div class="quick">
+    <div>
+      <label>username</label>
+      <input id="loginUser" type="text" value="jihoon">
+    </div>
+    <div>
+      <label>password</label>
+      <input id="loginPass" type="password" value="jihoon123">
+    </div>
+    <button id="loginBtn" class="primary" onclick="doLogin()">로그인</button>
+    <button onclick="logout()">로그아웃</button>
+  </div>
+  <div id="tokenStatus" style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#666;margin-top:8px;">토큰 없음 — 로그인 필요</div>
+
+  <!-- JWT 디코드 -->
+  <details id="jwtDecodeBox" style="margin-top:6px;display:none;">
+    <summary style="cursor:pointer;font-size:12px;color:#357abd;font-weight:bold;">🔓 JWT 토큰 풀어서 보기 (header.payload.signature)</summary>
+    <div style="background:#f7fbff;border:1px solid #cfe2ff;border-radius:6px;padding:10px;margin-top:6px;font-family:ui-monospace,Consolas,monospace;font-size:11px;">
+      <div><b style="color:#357abd">RAW:</b> <code id="jwtRaw" style="word-break:break-all;color:#222"></code>
+        <button onclick="copyJwt()" style="font-size:10px;padding:1px 8px;margin-left:6px;">📋 복사</button></div>
+      <div style="margin-top:6px;"><b style="color:#357abd">HEADER:</b> <code id="jwtHeader"></code></div>
+      <div style="margin-top:4px;"><b style="color:#357abd">PAYLOAD:</b> <code id="jwtPayload"></code></div>
+      <div style="margin-top:4px;color:#666;">→ <b>sub</b>(=user 정체) · <b>role</b>(권한) · <b>iat</b>(발급시각) · <b>exp</b>(만료시각). 서명은 plain-ws/Spring이 같은 JWT_SECRET으로 검증.</div>
+    </div>
+  </details>
+
+  <div class="hint">시드: <code>admin/admin123</code> · <code>jihoon/jihoon123</code> · <code>emma/emma123</code> · <code>minho/minho123</code>.
+  로그인 성공 시 자동으로 <code>ws://:8090/ws</code>에 접속 + hello 발사 + <code>ws://:8081/ws/notice</code> 공지 구독. 같은 user를 다른 브라우저/시크릿창에서 로그인 = 같은 user의 다른 device로 묶임.
+  <button onclick="openIncognitoHelper()" style="font-size:11px;padding:2px 8px;margin-left:4px;">🔒 시크릿창에서 열기 안내</button></div>
+</div>
+
+<!-- 1. 채팅 (풍선 + 통합 입력) -->
+<div class="row">
+  <h3>1. 채팅
+    <button onclick="clearChatHistory()" style="float:right;font-size:11px;padding:2px 8px;">기록 지우기 (localStorage)</button>
+  </h3>
+  <div id="chat"></div>
+  <div id="chatInputBar">
+    <div>
+      <label>받는 사람</label>
+      <input id="to" type="text" value="emma">
+    </div>
+    <div id="chatBody">
+      <label>메시지</label>
+      <input id="body" type="text" placeholder="Enter로 전송" style="width:100%">
+    </div>
+    <button id="sendBtn" class="primary" onclick="sendMsg()" disabled>보내기</button>
+  </div>
+  <div class="hint">받는 사람이 <b>온라인이면 즉시 send</b>(Redis 적재 X), <b>오프라인이면 inbox:받는사람</b>에 LPUSH. 같은 user의 다른 device들에는 carbon copy.</div>
+</div>
+
+<!-- 2. 공지 채널 -->
+<div class="row" style="background:#fffaf0;border-color:#f0c674;">
+  <h3>2. Spring 공지 채널 — <code>:8081 /ws/notice</code> 구독 + admin 발송</h3>
+
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+    <button id="noticeSubBtn" onclick="toggleNoticeSub()">📡 공지 구독 켜기</button>
+    <span id="noticeStatus" style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#888;">구독 OFF</span>
+    <button onclick="clearNoticeLog()" style="margin-left:auto;font-size:11px;padding:2px 8px;">로그 지우기</button>
+  </div>
+
+  <div id="noticeSendBox" style="display:none;border:1px dashed #f0c674;padding:10px;border-radius:6px;background:#fff5e6;margin-bottom:8px;">
+    <div style="font-size:12px;color:#a26b00;font-weight:bold;margin-bottom:6px;">🔔 admin 공지 발송</div>
+    <div class="quick" style="gap:8px;">
+      <div style="flex:1;min-width:240px;">
+        <label>공지 본문</label>
+        <input id="noticeBody" type="text" value="점검 안내: 오늘 23시" style="width:100%;">
+      </div>
+      <div>
+        <label>level</label>
+        <select id="noticeLevel">
+          <option value="info">info</option>
+          <option value="warn" selected>warn</option>
+          <option value="critical">critical</option>
+        </select>
+      </div>
+      <button class="primary" onclick="sendNotice()" style="background:#e67e22;border-color:#a14a00;">📢 발송</button>
+      <button onclick="previewNoticePacket()" style="font-size:11px;">📦 패킷 미리보기</button>
+    </div>
+    <pre id="noticePacketPreview" style="display:none;background:#1e1e1e;color:#9cdcfe;padding:8px;border-radius:4px;font-family:ui-monospace,Consolas,monospace;font-size:11px;margin-top:6px;white-space:pre-wrap;word-break:break-all;"></pre>
+    <div id="noticeSendResult" style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#666;margin-top:6px;"></div>
+  </div>
+
+  <div id="mongooseAdminBox" style="display:none;border:1px dashed #d4a4ff;padding:10px;border-radius:6px;background:#f6efff;margin-bottom:8px;">
+    <div style="font-size:12px;color:#6b4499;font-weight:bold;margin-bottom:6px;">
+      🐘 MongooseIM GraphQL 프록시 <span style="font-weight:normal;color:#888">(Spring이 :5551 Basic Auth로 대신 호출)</span>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+      <button onclick="mongooseStats()">📊 stats</button>
+      <button onclick="mongooseUsers()">👥 users (localhost)</button>
+      <button onclick="previewMongoosePacket()" style="margin-left:auto;font-size:11px;">📦 Spring→Mongoose 패킷 미리보기</button>
+    </div>
+    <pre id="mongoosePacketPreview" style="display:none;background:#1e1e1e;color:#9cdcfe;padding:8px;border-radius:4px;font-family:ui-monospace,Consolas,monospace;font-size:11px;margin-bottom:6px;white-space:pre-wrap;word-break:break-all;"></pre>
+    <details>
+      <summary style="cursor:pointer;font-size:12px;color:#6b4499;">▸ 임의 GraphQL 쿼리</summary>
+      <div style="margin-top:6px;">
+        <textarea id="mongooseQuery" style="width:100%;height:64px;font-family:ui-monospace,Consolas,monospace;font-size:12px;">query { stats { uptimeSeconds onlineUsersNumber registeredUsers } }</textarea>
+        <button onclick="mongooseCustomQuery()">🚀 보내기</button>
+      </div>
+    </details>
+    <pre id="mongooseResult" style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#333;background:#fff;border:1px solid #e0d0ff;border-radius:4px;padding:8px;margin-top:8px;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;">(응답 대기)</pre>
+  </div>
+  <div id="noticeSendHint" class="hint">📌 admin 도구는 admin 토큰만 가능. 일반 user는 구독만.</div>
+
+  <div id="noticeLog" style="margin-top:10px;border:1px solid #f0c674;border-radius:6px;background:#fffefa;padding:8px;min-height:60px;max-height:240px;overflow-y:auto;font-size:13px;">
+    <div style="color:#999;text-align:center;padding:14px 0;">아직 도착한 공지 없음</div>
+  </div>
+</div>
+
+<!-- 3. Redis 상태 -->
+<div class="row">
+  <h3>3. 지금 Redis 안 상태 (실시간)
+    <button onclick="loadRedis()" style="float:right;font-size:11px;padding:2px 8px;">새로고침</button>
+    <label style="float:right;font-size:11px;color:#666;margin-right:8px;">
+      <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()" checked> 2초마다 자동
+    </label>
+  </h3>
+  <div id="redis"></div>
+  <div class="hint"><b>online</b> Set / <b>session:{user}:{device}</b> Hash(TTL 5분) / <b>user_devices:{user}</b> Set / <b>inbox:{user}</b> List(TTL 7일). 메시지 보내면 즉시 변화.</div>
+</div>
+
+<!-- 4. TTL 단축 시연 -->
+<div class="row" style="background:#fff5e6;border-color:#f0c674;">
+  <h3>4. ⚡ 오프라인 큐 TTL 30초 단축 — 삭제 자동 시연
+    <button id="expireBtn" onclick="forceExpire(30)" style="float:right;font-size:12px;padding:4px 12px;background:#e74c3c;color:white;border:none;border-radius:5px;cursor:pointer;font-weight:bold;">30초 후 삭제</button>
+  </h3>
+  <div id="expireStatus" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#666;">대기 중… 먼저 오프라인 상대에게 메시지 보내서 inbox:* 키 만들어야 함</div>
+  <div class="hint">버튼 누르면 모든 inbox:* 키 TTL이 30초로 단축됨 → 카운트다운 후 자동 삭제.</div>
+</div>
+
+<!-- 5. MONITOR -->
+<div class="row">
+  <h3>5. Redis MONITOR — 실시간 명령 스트림
+    <button id="monBtn" onclick="toggleMonitor()" style="float:right;font-size:11px;padding:2px 8px;">시작</button>
+    <button onclick="document.getElementById('monitor').innerHTML=''" style="float:right;font-size:11px;padding:2px 8px;margin-right:6px;">지우기</button>
+  </h3>
+  <div id="monitor" style="background:#1e1e1e;color:#9cdcfe;padding:10px;border-radius:6px;max-height:260px;overflow-y:auto;font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.4;display:none;"></div>
+  <div class="hint">시작 누르면 Redis 명령이 SSE로 실시간 푸시됨. <code>LPUSH inbox:* → DEL inbox:*</code> 흐름 한 줄로 보임.</div>
+</div>
+
+<!-- 6. (디버그) WS 프레임 로그 -->
+<div class="row">
+  <details>
+    <summary style="cursor:pointer;font-size:13px;color:#666;font-weight:bold;">6. (디버그) WebSocket 프레임 로그 — 펼치기</summary>
+    <div id="wsChannelHdr" style="background:#2a2a2a;color:#9cdcfe;padding:6px 10px;border-radius:6px 6px 0 0;margin-top:8px;font-family:ui-monospace,Consolas,monospace;font-size:11px;border-bottom:1px solid #444;">
+      💬 채팅 WS: <code id="chatChanUrl">ws://localhost:8090/ws</code> &nbsp;·&nbsp; 📣 공지 WS: <code>ws://localhost:8081/ws/notice</code>
+    </div>
+    <div id="log" style="background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:0 0 6px 6px;max-height:280px;overflow-y:auto;font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.5;"></div>
+    <div class="hint">↑ 보낸 것 (파랑) / ↓ 받은 것 (초록) / 에러 (빨강) / 시스템 (주황) · 보라색 <code>[:포트/경로]</code>가 어느 WebSocket에서 발생했는지 표시</div>
+  </details>
+</div>
+
+<!-- 7. (디버그) HTTP 패킷 로그 -->
+<div class="row">
+  <details open>
+    <summary style="cursor:pointer;font-size:13px;color:#666;font-weight:bold;">7. (디버그) HTTP 패킷 로그 — 로그인 / 공지발송 / Mongoose GraphQL 프록시</summary>
+    <div style="background:#2a2a2a;color:#ffd479;padding:6px 10px;border-radius:6px 6px 0 0;margin-top:8px;font-family:ui-monospace,Consolas,monospace;font-size:11px;border-bottom:1px solid #444;">
+      🌐 추적 대상:
+      <code>POST :8081/auth/login</code>,
+      <code>POST :8081/admin/notice</code>,
+      <code>GET/POST :8081/admin/mongoose/*</code>
+      <button onclick="document.getElementById('httpLog').innerHTML=''" style="float:right;font-size:10px;padding:1px 8px;">지우기</button>
+    </div>
+    <div id="httpLog" style="background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:0 0 6px 6px;max-height:360px;overflow-y:auto;font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;"></div>
+    <div class="hint">↑ 요청 (파랑) / ↓ 응답 (초록 = 2xx, 빨강 = 4xx/5xx) · <b>GraphQL 프록시 호출</b> 시 1단계(사용자 JWT) 응답에 Spring이 내부적으로 2단계(admin:secret Basic) MongooseIM 호출한 결과가 그대로 담겨 나옴.</div>
+  </details>
+</div>
+
+<script>
+// ── 공용 유틸 ─────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const ts = () => new Date().toISOString().slice(11, 23);
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
+function escapeHtml(s) { return esc(s); }
+function tsFmt(ms) { if (!ms) return ''; return new Date(Number(ms)).toLocaleTimeString(); }
+
+function logLine(cls, text, channel) {
+  const el = $('log'); if (!el) return;
+  const div = document.createElement('div');
+  const color = { out:'#6ec6ff', in:'#a5d6a7', err:'#ef9a9a', sys:'#ffcc80' }[cls] || '#d4d4d4';
+  // 어느 ws 채널에서 발생한 프레임인지 prefix로 박는다
+  const ch = channel || (cls === 'out' || cls === 'in' ? `:${location.port||'8090'}/ws` : '');
+  const chTag = ch ? `<span style="color:#c586c0;margin-right:6px">[${escapeHtml(ch)}]</span>` : '';
+  div.innerHTML = `<span style="color:#888;margin-right:6px">${ts()}</span>${chTag}<span style="color:${color}">${escapeHtml(text)}</span>`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── 디바이스 ID ───────────────────────────────────────
+const DEVICE_LS_KEY = 'plainws_device_id_v1';
+function getOrCreateDeviceId() {
+  let id = localStorage.getItem(DEVICE_LS_KEY);
+  if (!id) {
+    id = 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    localStorage.setItem(DEVICE_LS_KEY, id);
+  }
+  return id;
+}
+const MY_DEVICE_ID = getOrCreateDeviceId();
+
+// ── 상단 상태 바 ──────────────────────────────────────
+function setTop(id, text, klass) {
+  const el = $(id); if (!el) return;
+  el.innerHTML = text;
+  el.className = 'chip' + (klass ? ' ' + klass : '');
+}
+function refreshTopBar() {
+  const u = localStorage.getItem('plainws_my_user_v1');
+  const role = localStorage.getItem('plainws_my_role_v1');
+  setTop('topUser', u ? `user: <b>${esc(u)}</b>${role==='admin'?' 👑':''}` : 'user: <b>(로그인 전)</b>');
+  setTop('topDevice', `device: <code>${esc(MY_DEVICE_ID)}</code>`);
+}
+
+// ── plain-ws WebSocket ────────────────────────────────
+let ws = null;
+let myUser = null;
+
+function setWsBadge(state) {
+  if (state === 'open')        setTop('topWs', 'plain-ws: <b>OPEN</b>', 'ok');
+  else if (state === 'connecting') setTop('topWs', 'plain-ws: 연결중', 'warn');
+  else                          setTop('topWs', 'plain-ws: CLOSED', 'bad');
+}
+
+const CHAT_CHAN = `:${location.port||'8090'}/ws`;
+function connectAndHello() {
+  const tok = localStorage.getItem('plainws_jwt_v1');
+  if (!tok) { logLine('err', '토큰 없음 — 로그인부터', CHAT_CHAN); return; }
+  if (ws && ws.readyState !== 3) { try { ws.close(); } catch(_){} }
+  setWsBadge('connecting');
+  const url = `ws://${location.host}/ws`;
+  const chHdr = $('chatChanUrl'); if (chHdr) chHdr.textContent = url;
+  logLine('sys', `connecting to ${url} ...`, CHAT_CHAN);
+  ws = new WebSocket(url);
+  ws.onopen = () => {
+    setWsBadge('open');
+    logLine('sys', '✓ WS OPEN — hello 자동 발사', CHAT_CHAN);
+    const hello = { type: 'hello', token: tok, deviceId: MY_DEVICE_ID, deviceType: 'web' };
+    ws.send(JSON.stringify(hello));
+    logLine('out', '↑ ' + JSON.stringify(hello), CHAT_CHAN);
+    $('sendBtn').disabled = false;
+  };
+  ws.onmessage = ev => {
+    logLine('in', '↓ ' + ev.data, CHAT_CHAN);
+    try {
+      const m = JSON.parse(ev.data);
+      if (m.type === 'welcome') {
+        myUser = m.user;
+        try { localStorage.setItem('plainws_my_user_v1', myUser); } catch (_) {}
+        refreshTopBar();
+      } else if (m.type === 'msg') {
+        renderBubble(m);
+      }
+    } catch(_) {}
+  };
+  ws.onclose = ev => {
+    setWsBadge('closed');
+    $('sendBtn').disabled = true;
+    logLine('sys', `× WS CLOSED code=${ev.code} reason="${ev.reason}"`, CHAT_CHAN);
+  };
+  ws.onerror = () => logLine('err', '! WS error', CHAT_CHAN);
+}
+
+function sendMsg() {
+  const to = $('to').value.trim();
+  const body = $('body').value;
+  if (!to || !body) { alert('받는 사람 + 본문 입력'); return; }
+  if (!ws || ws.readyState !== 1) { alert('WS 안 열림 — 로그인부터'); return; }
+  const obj = { type: 'msg', to, body };
+  ws.send(JSON.stringify(obj));
+  logLine('out', '↑ ' + JSON.stringify(obj));
+  $('body').value = '';
+  $('body').focus();
+}
+
+// Enter 로 보내기
+document.addEventListener('DOMContentLoaded', () => {
+  $('body').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
+  $('loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+});
+
+// ── 채팅 풍선 + localStorage (user별 분리) ────────────
+const CHAT_LS_KEY_BASE = 'plainws_chat_log_v1';
+const renderedIds = new Set();
+function chatLsKey() {
+  const u = myUser || localStorage.getItem('plainws_my_user_v1') || 'anon';
+  return `${CHAT_LS_KEY_BASE}_${u}`;
+}
+function loadChatHistory() { try { return JSON.parse(localStorage.getItem(chatLsKey()) || '[]'); } catch { return []; } }
+function saveChatHistory(items) { try { localStorage.setItem(chatLsKey(), JSON.stringify(items)); } catch(_){} }
+function appendChatHistory(m) {
+  const items = loadChatHistory();
+  items.push(m);
+  if (items.length > 5000) items.splice(0, items.length - 5000);
+  saveChatHistory(items);
+}
+function clearChatHistory() {
+  localStorage.removeItem(chatLsKey());
+  $('chat').innerHTML = '';
+  renderedIds.clear();
+}
+function reloadChatPanel() {
+  $('chat').innerHTML = '';
+  renderedIds.clear();
+  const items = loadChatHistory();
+  items.forEach(m => renderBubble(m, { replay: true }));
+}
+
+function renderBubble(m, opts) {
+  if (!m.body) return;
+  if (m.id && renderedIds.has(m.id)) return;
+  if (m.id) renderedIds.add(m.id);
+  const box = $('chat');
+  const mine = m.from === myUser;
+  const div = document.createElement('div');
+  div.style.cssText = `
+    max-width: 70%; padding: 8px 12px; border-radius: 12px;
+    align-self: ${mine ? 'flex-end' : 'flex-start'};
+    background: ${mine ? '#d6f5d6' : '#fff'};
+    border: 1px solid ${mine ? '#a8d8a8' : '#e0e0e0'};
+    font-size: 14px; line-height: 1.4; word-break: break-word;`;
+  const meta = `<div style="font-size:10px;color:#888;margin-bottom:2px">${mine ? '나' : esc(m.from || '?')} → ${esc(m.to || '?')} · ${m.ts ? new Date(m.ts).toLocaleTimeString() : ''}</div>`;
+  div.innerHTML = meta + esc(m.body);
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  if (!opts || !opts.replay) appendChatHistory(m);
+}
+
+(function restoreChatOnLoad() {
+  try { myUser = localStorage.getItem('plainws_my_user_v1') || null; } catch (_) {}
+  const items = loadChatHistory();
+  items.forEach(m => renderBubble(m, { replay: true }));
+})();
+
+// ── 로그인 ────────────────────────────────────────────
+const SPRING_BASE = `http://${location.hostname}:8081`;
+
+async function doLogin() {
+  const user = $('loginUser').value.trim();
+  const pass = $('loginPass').value;
+  if (!user || !pass) return alert('username + password 입력');
+  const stat = $('tokenStatus');
+  stat.textContent = '로그인 요청 중...';
+  try {
+    const { res, text } = await loggedFetch(`${SPRING_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user, password: pass })
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} — ${text}`);
+    }
+    const data = JSON.parse(text);
+    localStorage.setItem('plainws_jwt_v1', data.token);
+    localStorage.setItem('plainws_my_user_v1', data.user);
+    localStorage.setItem('plainws_my_role_v1', data.role || 'user');
+    myUser = data.user;
+    reloadChatPanel();   // 새 user 기록만 보이게 채팅 패널 재렌더
+    stat.innerHTML = `<span style="color:#27ae60">✓ 토큰 발급</span> · user=<b>${esc(data.user)}</b> · role=${esc(data.role)} · exp ${Math.round(data.expiresInMs/60000)}분 · <code>${esc(data.token.slice(0,24))}…</code>`;
+    showJwtDecode(data.token);
+    applyRoleVisibility(data.role);
+    refreshTopBar();
+    logLine('sys', `[auth] login OK user=${data.user} role=${data.role}`);
+    connectAndHello();   // 로그인 OK 시 자동 plain-ws 접속
+    if (!noticeWs) toggleNoticeSub();   // 공지도 자동 구독
+  } catch (e) {
+    stat.innerHTML = `<span style="color:#c00">✗ 로그인 실패: ${esc(e.message)}</span>`;
+    logLine('err', `[auth] login failed: ${e.message}`);
+  }
+}
+
+function logout() {
+  if (ws) try { ws.close(); } catch(_){}
+  if (noticeWs) try { noticeWs.close(); } catch(_){}
+  localStorage.removeItem('plainws_jwt_v1');
+  localStorage.removeItem('plainws_my_role_v1');
+  localStorage.removeItem('plainws_my_user_v1');
+  myUser = null;
+  $('tokenStatus').textContent = '토큰 없음 — 로그인 필요';
+  $('jwtDecodeBox').style.display = 'none';
+  $('chat').innerHTML = '';
+  renderedIds.clear();
+  applyRoleVisibility(null);
+  refreshTopBar();
+  logLine('sys', '[auth] logout');
+}
+
+// ── HTTP 패킷 로거 (7번 박스 전용) ────────────────────
+function httpLogLine(cls, text) {
+  const el = $('httpLog'); if (!el) return;
+  const div = document.createElement('div');
+  const color = { out:'#6ec6ff', in:'#a5d6a7', err:'#ef9a9a', sys:'#ffcc80' }[cls] || '#d4d4d4';
+  div.innerHTML = `<span style="color:#888;margin-right:6px">${ts()}</span><span style="color:${color}">${escapeHtml(text)}</span>`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+async function loggedFetch(url, opts) {
+  opts = opts || {};
+  const method = (opts.method || 'GET').toUpperCase();
+  const u = new URL(url, location.href);
+  // 요청 라인 + 헤더 + 바디 (cURL 비슷한 형식)
+  const headers = opts.headers || {};
+  let line = `↑ ${method} ${u.pathname}${u.search} HTTP/1.1\n   Host: ${u.host}`;
+  for (const [k, v] of Object.entries(headers)) {
+    let vs = v;
+    if (k.toLowerCase() === 'authorization' && typeof v === 'string' && v.startsWith('Bearer ')) {
+      vs = 'Bearer ' + maskToken(v.slice(7));
+    }
+    line += `\n   ${k}: ${vs}`;
+  }
+  if (opts.body) line += `\n\n   ${typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body)}`;
+  httpLogLine('out', line);
+  const t0 = performance.now();
+  try {
+    const res = await fetch(url, opts);
+    const text = await res.text();
+    const dt = (performance.now() - t0).toFixed(0);
+    let pretty = text;
+    try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
+    const short = pretty.length > 600 ? pretty.slice(0, 600) + `\n   …(+${pretty.length-600}B 생략)` : pretty;
+    httpLogLine(res.ok ? 'in' : 'err', `↓ HTTP ${res.status} ${res.statusText}  (${dt}ms)\n   ${short.replace(/\n/g, '\n   ')}`);
+    httpLogLine('sys', '─'.repeat(60));
+    return { res, text };
+  } catch (e) {
+    httpLogLine('err', `× fetch failed: ${e.message}`);
+    throw e;
+  }
+}
+
+// ── JWT 디코드 (header.payload.signature) ─────────────
+function base64UrlDecode(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  return decodeURIComponent(atob(s).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+}
+function showJwtDecode(token) {
+  const box = $('jwtDecodeBox');
+  box.style.display = '';
+  $('jwtRaw').textContent = token;
+  try {
+    const [h, p] = token.split('.');
+    const hdr = JSON.parse(base64UrlDecode(h));
+    const pl  = JSON.parse(base64UrlDecode(p));
+    // exp/iat 사람 읽을 수 있게
+    if (pl.iat) pl.iat = `${pl.iat} (${new Date(pl.iat*1000).toLocaleString()})`;
+    if (pl.exp) pl.exp = `${pl.exp} (${new Date(pl.exp*1000).toLocaleString()})`;
+    $('jwtHeader').textContent = JSON.stringify(hdr);
+    $('jwtPayload').textContent = JSON.stringify(pl);
+  } catch (e) {
+    $('jwtHeader').textContent = '(decode failed)';
+    $('jwtPayload').textContent = e.message;
+  }
+}
+function copyJwt() {
+  const tok = localStorage.getItem('plainws_jwt_v1');
+  if (!tok) return alert('토큰 없음');
+  navigator.clipboard.writeText(tok).then(() => alert('토큰 복사 완료'));
+}
+
+// ── 시크릿창 시연 안내 ────────────────────────────────
+function openIncognitoHelper() {
+  const url = location.href;
+  navigator.clipboard.writeText(url).catch(() => {});
+  alert(
+    '디바이스 묶음 시연:\n\n' +
+    '1) URL 복사됨 — ' + url + '\n' +
+    '2) Chrome/Edge 시크릿창 열기: Ctrl+Shift+N\n' +
+    '   Firefox 사생활창: Ctrl+Shift+P\n' +
+    '3) 시크릿창에 URL 붙여넣고 같은 user로 로그인\n' +
+    '   → localStorage가 분리돼서 새 deviceId 발급\n' +
+    '   → user_devices:{user} Set에 2개 등장, 양쪽 carbon copy 동기화\n\n' +
+    '※ 같은 일반창의 새 탭은 안 됨 (localStorage 공유 = 같은 deviceId)'
+  );
+}
+
+// ── 패킷 미리보기 ─────────────────────────────────────
+function maskToken(t) { return t ? t.slice(0, 12) + '...' + t.slice(-6) : '<TOKEN>'; }
+function previewNoticePacket() {
+  const tok = localStorage.getItem('plainws_jwt_v1') || '<TOKEN>';
+  const body = $('noticeBody').value || '(본문)';
+  const level = $('noticeLevel').value;
+  const payload = JSON.stringify({ body, level }, null, 2);
+  const text =
+`# Spring 8081 — admin이 공지 발행 (브라우저 → Spring)
+POST http://${location.hostname}:8081/admin/notice
+Authorization: Bearer ${maskToken(tok)}
+Content-Type: application/json
+
+${payload}
+
+# 위 요청을 받은 Spring 내부 동작:
+#   1. JWT 검증 (role=admin 확인)
+#   2. Redis PUBLISH "notice.broadcast" <JSON>
+#   3. 모든 Spring 인스턴스의 /ws/notice 구독자에게 fan-out
+#      → ws://${location.hostname}:8081/ws/notice 소켓 모두 .send(JSON)`;
+  const pre = $('noticePacketPreview');
+  pre.style.display = pre.style.display === 'none' ? '' : 'none';
+  pre.textContent = text;
+}
+function previewMongoosePacket() {
+  const tok = localStorage.getItem('plainws_jwt_v1') || '<TOKEN>';
+  const q = ($('mongooseQuery')?.value || 'query { stats { uptimeSeconds onlineUsersNumber registeredUsers } }').trim();
+  const text =
+`# 1단계: 브라우저 → Spring (사용자 JWT 사용)
+POST http://${location.hostname}:8081/admin/mongoose/query
+Authorization: Bearer ${maskToken(tok)}     ← 사용자 JWT (role=admin 검증용)
+Content-Type: application/json
+
+{"query":${JSON.stringify(q)}}
+
+# 2단계: Spring → MongooseIM (admin:secret Basic Auth로 교체)
+POST http://xmpp-server:5551/api/graphql
+Authorization: Basic YWRtaW46c2VjcmV0          ← base64("admin:secret"), Spring이 보관
+Content-Type: application/json
+
+{"query":${JSON.stringify(q)}}
+
+# 핵심:
+#   - 인증 방식이 단순 Basic Auth라 "그냥 명령어 날리기"로 분류됨
+#   - admin:secret은 브라우저에 노출 안 되고 Spring이 대신 보관/첨부
+#   - 사용자별 자격 필요한 5561 user endpoint는 프록시 안 함`;
+  const pre = $('mongoosePacketPreview');
+  pre.style.display = pre.style.display === 'none' ? '' : 'none';
+  pre.textContent = text;
+}
+
+// ── 공지 ─────────────────────────────────────────────
+let noticeWs = null;
+function setNoticeStatus(text, color) { $('noticeStatus').textContent = text; $('noticeStatus').style.color = color || '#888'; }
+function noticeLogEntry(html) {
+  const log = $('noticeLog');
+  if (log.querySelector('div[style*="text-align:center"]')) log.innerHTML = '';
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  div.style.cssText = 'border-bottom:1px dotted #e0c890;padding:6px 4px;';
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+function clearNoticeLog() { $('noticeLog').innerHTML = '<div style="color:#999;text-align:center;padding:14px 0;">아직 도착한 공지 없음</div>'; }
+
+function toggleNoticeSub() {
+  const btn = $('noticeSubBtn');
+  if (noticeWs) {
+    try { noticeWs.close(); } catch (_) {}
+    noticeWs = null;
+    btn.textContent = '📡 공지 구독 켜기';
+    setNoticeStatus('구독 OFF', '#888');
+    setTop('topNotice', '공지: OFF');
+    return;
+  }
+  const tok = localStorage.getItem('plainws_jwt_v1');
+  if (!tok) { alert('먼저 [0. 로그인]'); return; }
+  const url = `ws://${location.hostname}:8081/ws/notice?token=${encodeURIComponent(tok)}`;
+  const NOTICE_CHAN = ':8081/ws/notice';
+  setNoticeStatus('연결 중...', '#888');
+  logLine('sys', `connecting to ${url.replace(/token=[^&]+/, 'token=***')} ...`, NOTICE_CHAN);
+  noticeWs = new WebSocket(url);
+  noticeWs.onopen = () => {
+    btn.textContent = '🛑 공지 구독 끄기';
+    setNoticeStatus('구독 ON · 연결됨', '#27ae60');
+    setTop('topNotice', '공지: <b>ON</b>', 'ok');
+    noticeLogEntry(`<span style="color:#888;font-size:11px;">▶ ${esc(url)}</span>`);
+    logLine('sys', '✓ 공지 WS OPEN', NOTICE_CHAN);
+  };
+  noticeWs.onmessage = ev => {
+    logLine('in', '↓ ' + ev.data, NOTICE_CHAN);
+    try {
+      const m = JSON.parse(ev.data);
+      if (m.type === 'hello') {
+        noticeLogEntry(`<span style="color:#0a7;">✓ hello</span> · user=<b>${esc(m.user)}</b> · 구독자 ${m.subscribers}명`);
+      } else if (m.type === 'notice') {
+        const color = m.level === 'critical' ? '#c0392b' : m.level === 'warn' ? '#e67e22' : '#3498db';
+        const bg    = m.level === 'critical' ? '#fdecea' : m.level === 'warn' ? '#fff3e0' : '#e7f3fc';
+        const time  = m.ts ? new Date(m.ts).toLocaleTimeString() : '';
+        noticeLogEntry(
+          `<div style="background:${bg};padding:8px 10px;border-radius:6px;border-left:4px solid ${color};">`
+          + `<div style="font-size:10px;color:#666;margin-bottom:2px;">[${esc(m.level||'info').toUpperCase()}] from <b>${esc(m.from||'?')}</b> · ${time} · id=${esc((m.id||'').slice(0,8))}</div>`
+          + `<div style="font-size:14px;color:#222;">${esc(m.body||'')}</div>`
+          + `</div>`
+        );
+      } else {
+        noticeLogEntry(`<code style="color:#666;">${esc(ev.data)}</code>`);
+      }
+    } catch (_) {
+      noticeLogEntry(`<code style="color:#666;">${esc(ev.data)}</code>`);
+    }
+  };
+  noticeWs.onclose = ev => {
+    noticeWs = null;
+    btn.textContent = '📡 공지 구독 켜기';
+    setNoticeStatus(`× 끊김 code=${ev.code}`, '#c00');
+    setTop('topNotice', '공지: OFF', 'bad');
+    noticeLogEntry(`<span style="color:#c00;font-size:11px;">× CLOSED code=${ev.code} reason="${esc(ev.reason||'')}"</span>`);
+    logLine('sys', `× 공지 WS CLOSED code=${ev.code}`, ':8081/ws/notice');
+  };
+  noticeWs.onerror = () => { setNoticeStatus('× 에러', '#c00'); logLine('err', '! 공지 WS error', ':8081/ws/notice'); };
+}
+
+async function sendNotice() {
+  const tok = localStorage.getItem('plainws_jwt_v1');
+  const role = localStorage.getItem('plainws_my_role_v1');
+  if (!tok) { alert('먼저 로그인'); return; }
+  if (role !== 'admin') { alert('admin 토큰이 아닙니다'); return; }
+  const body = $('noticeBody').value.trim();
+  const level = $('noticeLevel').value;
+  if (!body) { alert('본문 입력'); return; }
+  const result = $('noticeSendResult');
+  result.textContent = '발송 중...';
+  try {
+    const { res, text } = await loggedFetch(`http://${location.hostname}:8081/admin/notice`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+      body: JSON.stringify({ body, level })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${text}`);
+    const data = JSON.parse(text);
+    result.innerHTML = `<span style="color:#27ae60">✓ 발송</span> · id=<code>${esc((data.id||'').slice(0,8))}</code> · redisSubs=${data.redisSubscribers} · localSessions=${data.localSessions}`;
+  } catch (e) {
+    result.innerHTML = `<span style="color:#c00">✗ ${esc(e.message)}</span>`;
+  }
+}
+
+function applyRoleVisibility(role) {
+  const sendBox = $('noticeSendBox');
+  const adminBox = $('mongooseAdminBox');
+  const hint = $('noticeSendHint');
+  if (role === 'admin') {
+    sendBox.style.display = ''; adminBox.style.display = '';
+    hint.innerHTML = '✓ admin 토큰 — 공지 발송 + MongooseIM GraphQL 프록시 사용 가능';
+  } else {
+    sendBox.style.display = 'none'; adminBox.style.display = 'none';
+    hint.innerHTML = '📌 admin 도구는 admin 토큰만. 일반 user는 구독만.';
+  }
+}
+
+// ── Mongoose 프록시 ───────────────────────────────────
+async function mongooseFetch(path, opts) {
+  const tok = localStorage.getItem('plainws_jwt_v1');
+  if (!tok) { alert('먼저 로그인'); return null; }
+  const { res, text } = await loggedFetch(`http://${location.hostname}:8081${path}`, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok, ...(opts&&opts.headers||{}) }
+  });
+  let parsed; try { parsed = JSON.parse(text); } catch { parsed = text; }
+  return { status: res.status, ok: res.ok, body: parsed };
+}
+function showMongooseResult(label, r) {
+  const pre = $('mongooseResult');
+  const bodyStr = typeof r.body === 'string' ? r.body : JSON.stringify(r.body, null, 2);
+  pre.textContent = `[${label}] HTTP ${r.status} ${r.ok?'✓':'✗'}\n` + bodyStr;
+}
+async function mongooseStats() { const r = await mongooseFetch('/admin/mongoose/stats', { method:'GET' }); if (r) showMongooseResult('GET /admin/mongoose/stats', r); }
+async function mongooseUsers() { const r = await mongooseFetch('/admin/mongoose/users?domain=localhost', { method:'GET' }); if (r) showMongooseResult('GET /admin/mongoose/users', r); }
+async function mongooseCustomQuery() {
+  const q = $('mongooseQuery').value.trim(); if (!q) return alert('query 입력');
+  const r = await mongooseFetch('/admin/mongoose/query', { method:'POST', body: JSON.stringify({ query: q }) });
+  if (r) showMongooseResult('POST /admin/mongoose/query', r);
+}
+
+// ── Redis 상태 패널 ───────────────────────────────────
+async function loadRedis() {
+  const el = $('redis');
+  try {
+    const res = await fetch('/redis-state');
+    const data = await res.json();
+    let html = `<div style="font-family:ui-monospace,Consolas,monospace;font-size:12px">`;
+    html += `<div style="color:#888;margin-bottom:6px">총 키 ${data.keyCount}개</div>`;
+
+    html += `<div style="margin-bottom:8px"><b style="color:#4a90e2">online</b> (Set) `;
+    html += data.online.length ? data.online.map(u => `<span style="background:#dfd;padding:2px 6px;border-radius:3px;margin-right:4px">${esc(u)}</span>`).join('') : '<span style="color:#999">(empty)</span>';
+    html += `</div>`;
+
+    html += `<div style="margin-bottom:8px"><b style="color:#e74c3c">session:{user}:{device} </b>(Hash) `;
+    const sessKeys = Object.keys(data.sessions);
+    if (!sessKeys.length) html += `<span style="color:#999">(empty)</span>`;
+    else {
+      html += `<table style="border-collapse:collapse;font-size:11px;margin-top:4px">`;
+      html += `<tr style="background:#eee"><th style="padding:4px 8px;text-align:left">key</th><th>type</th><th>sid</th><th>connected_at</th><th>last_seen</th><th>TTL</th></tr>`;
+      for (const k of sessKeys) {
+        const s = data.sessions[k]; const f = s.fields;
+        html += `<tr><td style="padding:4px 8px;border-top:1px solid #ddd">${esc(k)}</td>`;
+        html += `<td style="padding:4px 8px;border-top:1px solid #ddd">${esc(f.device_type||'')}</td>`;
+        html += `<td style="padding:4px 8px;border-top:1px solid #ddd">${esc(f.sid||'')}</td>`;
+        html += `<td style="padding:4px 8px;border-top:1px solid #ddd">${tsFmt(f.connected_at)}</td>`;
+        html += `<td style="padding:4px 8px;border-top:1px solid #ddd">${tsFmt(f.last_seen)}</td>`;
+        html += `<td style="padding:4px 8px;border-top:1px solid #ddd;color:${s.ttl<60?'#c00':'#080'}">${s.ttl}s</td></tr>`;
+      }
+      html += `</table>`;
+    }
+    html += `</div>`;
+
+    html += `<div style="margin-bottom:8px"><b style="color:#8e44ad">user_devices:{user} </b>(Set, user→deviceId들) `;
+    const udKeys = Object.keys(data.userDevices || {});
+    if (!udKeys.length) html += `<span style="color:#999">(empty)</span>`;
+    else {
+      html += `<div style="margin-top:4px">`;
+      for (const k of udKeys) {
+        const ud = data.userDevices[k];
+        html += `<div style="margin-left:14px;margin-bottom:2px"><code>${esc(k)}</code> &nbsp;`;
+        html += ud.devices.map(d => `<span style="background:#e6d3f5;padding:1px 6px;border-radius:3px;margin-right:3px;font-size:11px">${esc(d)}</span>`).join('');
+        html += ` <small style="color:#666">TTL ${ud.ttl}s</small></div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+
+    html += `<div style="margin-bottom:8px"><b style="color:#f39c12">inbox:* </b>(List — 오프라인 큐. LPUSH 된 메시지 JSON 한 줄씩 적재)</div>`;
+    const inboxKeys = Object.keys(data.inboxes);
+    if (!inboxKeys.length) html += `<div style="color:#999;margin-left:14px">(empty)</div>`;
+    else {
+      for (const k of inboxKeys) {
+        const i = data.inboxes[k];
+        html += `<div style="margin-left:14px;margin-bottom:8px"><code>${esc(k)}</code> &nbsp;<small>${i.len}건, TTL ${i.ttl}s</small>`;
+        // JSON parse 해서 칼럼 테이블로
+        const rows = i.messages.map(s => { try { return JSON.parse(s); } catch { return { _raw: s }; } });
+        html += `<table style="border-collapse:collapse;font-size:11px;margin-top:4px;width:100%;max-width:900px">`;
+        html += `<tr style="background:#fdf3e0"><th style="padding:4px 8px;text-align:left">#</th><th style="padding:4px 8px;text-align:left">from</th><th style="padding:4px 8px;text-align:left">to</th><th style="padding:4px 8px;text-align:left">body</th><th style="padding:4px 8px;text-align:left">ts</th><th style="padding:4px 8px;text-align:left">id</th></tr>`;
+        // LPUSH 라서 index 0이 가장 최신 → 표시는 그대로(최신 위)
+        rows.forEach((r, idx) => {
+          if (r._raw) {
+            html += `<tr><td colspan="6" style="padding:4px 8px;border-top:1px solid #f0d8a0;color:#c00">parse 실패: ${esc(r._raw)}</td></tr>`;
+            return;
+          }
+          html += `<tr style="border-top:1px solid #f0d8a0">`;
+          html += `<td style="padding:4px 8px;color:#888">${idx}</td>`;
+          html += `<td style="padding:4px 8px"><b>${esc(r.from||'')}</b></td>`;
+          html += `<td style="padding:4px 8px">${esc(r.to||'')}</td>`;
+          html += `<td style="padding:4px 8px">${esc(r.body||'')}</td>`;
+          html += `<td style="padding:4px 8px;color:#666">${tsFmt(r.ts)}</td>`;
+          html += `<td style="padding:4px 8px;color:#888"><code>${esc(r.id||'')}</code></td>`;
+          html += `</tr>`;
+        });
+        html += `</table>`;
+        // raw JSON 토글 (디버그용)
+        html += `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:10px;color:#999">▸ raw JSON 보기 (LRANGE 결과 그대로)</summary>`;
+        html += `<ol reversed style="margin:4px 0 0 16px;padding:0;font-size:10px;color:#666;font-family:ui-monospace,Consolas,monospace">`;
+        i.messages.forEach(m => html += `<li style="margin-bottom:2px">${esc(m)}</li>`);
+        html += `</ol></details>`;
+        html += `</div>`;
+      }
+    }
+    html += `</div>`;
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = `<div style="color:#c00">에러: ${esc(e.message)}</div>`;
+  }
+}
+
+let refreshTimer = null;
+function toggleAutoRefresh() {
+  if ($('autoRefresh').checked) {
+    refreshTimer = setInterval(loadRedis, 2000);
+    loadRedis();
+  } else {
+    clearInterval(refreshTimer);
+  }
+}
+
+// ── TTL 단축 시연 ────────────────────────────────────
+let expireTimer = null;
+async function forceExpire(seconds) {
+  const btn = $('expireBtn');
+  const stat = $('expireStatus');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/expire-inboxes?ttl=' + seconds);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (data.updated === 0) {
+      stat.innerHTML = `<span style="color:#888">⚠ 현재 inbox:* 키 없음 — 먼저 오프라인 상대에게 메시지를 보내세요</span>`;
+      btn.disabled = false;
+      return;
+    }
+    stat.innerHTML = `<b style="color:#e74c3c">⚡ inbox:* ${data.updated}개 키 TTL=${seconds}초로 단축</b> → ${esc(data.keys.join(', '))}`;
+    let left = seconds;
+    if (expireTimer) clearInterval(expireTimer);
+    expireTimer = setInterval(() => {
+      left--;
+      if (left <= 0) {
+        clearInterval(expireTimer);
+        stat.innerHTML += `<br><b style="color:#27ae60">✓ 만료 시각 도달 — Redis에서 오프라인 큐 사라짐</b>`;
+        btn.disabled = false;
+        if (typeof loadRedis === 'function') loadRedis();
+        return;
+      }
+      stat.innerHTML = `<b style="color:#e74c3c">⏱ 남은 시간: ${left}초</b> (inbox:* ${data.updated}개)`;
+    }, 1000);
+  } catch (e) {
+    stat.innerHTML = `<span style="color:#c00">에러: ${esc(e.message)}</span>`;
+    btn.disabled = false;
+  }
+}
+
+// ── MONITOR ──────────────────────────────────────────
+let monSrc = null;
+function toggleMonitor() {
+  const btn = $('monBtn'); const box = $('monitor');
+  if (monSrc) { monSrc.close(); monSrc = null; btn.textContent='시작'; box.style.display='none'; return; }
+  box.style.display='block';
+  monSrc = new EventSource('/monitor-stream');
+  monSrc.onmessage = ev => {
+    const line = JSON.parse(ev.data);
+    const div = document.createElement('div');
+    let cls = 'color:#9cdcfe';
+    if (/\bMULTI\b|\bEXEC\b/.test(line))    cls = 'color:#c586c0';
+    else if (/\bLPUSH\b|\bSADD\b|\bHSET\b/.test(line)) cls = 'color:#a5d6a7';
+    else if (/\bDEL\b|\bSREM\b|\bLTRIM\b/.test(line)) cls = 'color:#ef9a9a';
+    else if (/\bEXPIRE\b/.test(line))       cls = 'color:#ffcc80';
+    else if (/\bping\b/i.test(line))        cls = 'color:#666';
+    div.style.cssText = cls;
+    div.textContent = line;
+    box.appendChild(div); box.scrollTop = box.scrollHeight;
+  };
+  monSrc.onerror = () => { box.innerHTML += '<div style="color:#ef9a9a">— SSE error —</div>'; };
+  btn.textContent = '중지';
+}
+
+// ── 초기화 ───────────────────────────────────────────
+(function init() {
+  refreshTopBar();
+  applyRoleVisibility(localStorage.getItem('plainws_my_role_v1'));
+  loadRedis();
+  toggleAutoRefresh();
+  // 토큰 있으면 자동 재접속 + 공지 자동 구독 + JWT 디코드 표시
+  const savedTok = localStorage.getItem('plainws_jwt_v1');
+  if (savedTok) {
+    $('tokenStatus').innerHTML = `<span style="color:#27ae60">✓ 저장된 토큰</span> · user=<b>${esc(localStorage.getItem('plainws_my_user_v1'))}</b> · role=${esc(localStorage.getItem('plainws_my_role_v1')||'user')}`;
+    showJwtDecode(savedTok);
+    connectAndHello();
+    if (!noticeWs) toggleNoticeSub();
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>react-client</title>
+    <script>
+      // 슬롯 자동 분배.
+      // - 동기 inline → main.tsx 로드되기 전에 URL 확정.
+      // - URL ?slot= 명시되어 있으면 그대로 존중.
+      // - sessionStorage(탭별)에 자기 슬롯 박음 → 새로고침 시 유지.
+      // - localStorage의 plainws_live_tabs(슬롯→타임스탬프)로 live 슬롯 회수.
+      (function () {
+        try {
+          var url = new URL(location.href);
+          if (url.searchParams.has('slot')) return; // 사용자 명시 우선
+          var slot = sessionStorage.getItem('plainws_tab_slot');
+          if (!slot) {
+            var live = {};
+            try { live = JSON.parse(localStorage.getItem('plainws_live_tabs') || '{}') || {}; } catch (e) {}
+            var now = Date.now();
+            var KEEP = 15000;
+            var used = {};
+            for (var s in live) if (now - live[s] < KEEP) used[s] = true;
+            var KNOWN = ['main', 'a', 'b', 'c', 'd'];
+            for (var i = 0; i < KNOWN.length; i++) {
+              if (!used[KNOWN[i]]) { slot = KNOWN[i]; break; }
+            }
+            if (!slot) slot = 't' + Math.random().toString(36).slice(2, 6);
+            sessionStorage.setItem('plainws_tab_slot', slot);
+          }
+          if (slot !== 'main') {
+            url.searchParams.set('slot', slot);
+            history.replaceState(null, '', url.toString());
+          }
+        } catch (e) { /* 슬롯 부여 실패해도 main으로 fallback */ }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
