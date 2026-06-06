@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#FEE500"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true
     },
@@ -27,7 +29,8 @@
     "plugins": [
       "expo-secure-store",
       "expo-image-picker",
-      "expo-document-picker"
+      "expo-document-picker",
+      "expo-status-bar"
     ]
   }
 }
