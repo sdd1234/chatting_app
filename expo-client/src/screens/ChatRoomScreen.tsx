@@ -104,6 +104,7 @@ export default function ChatRoomScreen({ route, navigation }: Props) {
 function Bubble({ msg, mine, translateOn }: { msg: ChatMessage; mine: boolean; translateOn: boolean }) {
   const lang = useSettings((s) => s.lang);
   const [translated, setTranslated] = useState<string | null>(null);
+  const [showOriginal, setShowOriginal] = useState(false);
 
   // 번역 토글 ON + 상대 메시지(텍스트) → 내 언어로 번역
   useEffect(() => {
@@ -113,21 +114,35 @@ function Bubble({ msg, mine, translateOn }: { msg: ChatMessage; mine: boolean; t
     return () => { alive = false; };
   }, [translateOn, mine, msg.body, msg.file, lang]);
 
+  const hasTranslation = translated != null;
+
   return (
     <View style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheir]}>
-      <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheir]}>
-        {msg.file ? (
-          <View>
-            <Text style={[styles.fileLabel, mine && styles.textMine]}>
-              {msg.file.mime.startsWith('image/') ? '🖼️ ' : '📎 '}{msg.file.name}
-            </Text>
-            {!!msg.body && <Text style={[styles.bubbleText, mine && styles.textMine]}>{msg.body}</Text>}
-          </View>
-        ) : (
-          <Text style={[styles.bubbleText, mine && styles.textMine]}>{msg.body}</Text>
-        )}
-        {translated != null && (
-          <Text style={styles.translated}>🌐 {translated}</Text>
+      <View style={mine ? styles.colMine : styles.colTheir}>
+        <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheir]}>
+          {hasTranslation ? (
+            <>
+              {/* 번역문만 표시 — 원본은 아래 토글로 */}
+              <Text style={styles.bubbleText}>{translated}</Text>
+              {showOriginal && (
+                <Text style={styles.original}>{msg.body}</Text>
+              )}
+            </>
+          ) : msg.file ? (
+            <View>
+              <Text style={[styles.fileLabel, mine && styles.textMine]}>
+                {msg.file.mime.startsWith('image/') ? '🖼️ ' : '📎 '}{msg.file.name}
+              </Text>
+              {!!msg.body && <Text style={[styles.bubbleText, mine && styles.textMine]}>{msg.body}</Text>}
+            </View>
+          ) : (
+            <Text style={[styles.bubbleText, mine && styles.textMine]}>{msg.body}</Text>
+          )}
+        </View>
+        {hasTranslation && (
+          <TouchableOpacity onPress={() => setShowOriginal((v) => !v)}>
+            <Text style={styles.origToggle}>{showOriginal ? '원본 숨기기' : '원본 보기'}</Text>
+          </TouchableOpacity>
         )}
       </View>
     </View>
@@ -146,7 +161,10 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 15, color: '#191919' },
   textMine: { color: '#3c1e1e' },
   fileLabel: { fontSize: 14, fontWeight: '600', color: '#191919' },
-  translated: { fontSize: 13, color: '#0a7', marginTop: 4, fontStyle: 'italic' },
+  colMine: { maxWidth: '78%', alignItems: 'flex-end' },
+  colTheir: { maxWidth: '78%', alignItems: 'flex-start' },
+  original: { fontSize: 13, color: '#888', marginTop: 4, paddingTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.12)' },
+  origToggle: { fontSize: 11, color: '#555', marginTop: 2, textDecorationLine: 'underline' },
   inputBar: { flexDirection: 'row', alignItems: 'flex-end', padding: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#eee' },
   attachBtn: { paddingHorizontal: 6, paddingVertical: 8 },
   attachIcon: { fontSize: 22 },
