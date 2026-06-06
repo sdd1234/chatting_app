@@ -6,6 +6,8 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // WSL /mnt/c(9p)는 inotify 미동작 → polling 으로 파일변경 감지(HMR 정상화)
+    watch: { usePolling: true, interval: 300 },
     proxy: {
       '/auth':           { target: 'http://localhost:8081', changeOrigin: true },
       '/admin':          { target: 'http://localhost:8081', changeOrigin: true },
