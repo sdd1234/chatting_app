@@ -193,9 +193,45 @@ MongooseIM/
 | **3주차** | 웹소켓 직접 송신 (XMPP 미경유), DB 휘발성 → Redis 교체, API 문서화 | ✅ |
 | **4주차** | 세션 Redis 분리 (디바이스 묶음), Raids 테이블, Spring 도커화, GraphQL 패킷 분석 | ✅ |
 | **5주차** | **Spring Boot + React 프레임워크 통합** (이번 산출물) | ✅ |
-| **6주차** | ① 메시지 송신 시 토큰 만료 검증 = plain-ws 자체 (③안)<br>② React → React Native **Expo CLI** 전환 (RN CLI 금지) | 🔜 결정만, 미착수 |
+| **6주차** | ① 메시지 송신 시 토큰 만료 검증 = plain-ws 자체 (③안)<br>② React → React Native **Expo CLI** 전환 (RN CLI 금지) | ① ✅ 완료 / ② 🔜 진행 중 |
 
 자세한 미팅 결정사항: 위 표의 6주차 항목 참조
+
+---
+
+## 6주차 ① — 메시지 송신 시 토큰 만료 검증
+
+웹소켓(plain-ws)으로 메시지를 보낼 때, 클라가 들고 있는 JWT가 그새 만료됐을 수 있다.
+(현재 access token TTL = 1시간) hello 한 번만 검증하고 끝내면, 1시간 넘게 붙어 있는
+소켓은 만료된 토큰으로도 계속 메시지를 보낼 수 있게 된다. 그래서 **메시지 송신 시점에도
+토큰을 다시 검증**해야 한다. 검증을 "어디서" 할지 세 가지 안을 비교했다.
+
+| 안 | 방법 | 장점 | 단점 |
+|---|---|---|---|
+| **①** | **메인 서버(MongooseIM)가 관리** | XMPP 표준 세션·SASL 위에서 토큰 수명까지 일괄 관리 | 채팅을 MongooseIM에 안 태우는 현재 아키텍처와 충돌. 라우팅을 Mongoose로 되돌려야 해서 분담 구조가 깨짐 |
+| **②** | **웹소켓 send 시마다 Spring을 거쳐 검증** | 검증 로직이 Spring(토큰 발급처) 한 곳에 모임 | 메시지마다 plain-ws → Spring HTTP 왕복 1회 추가 → 지연·부하. 채팅 핫패스에 동기 REST 호출이 끼어 라우터의 의미(stateless 빠른 fan-out)가 무너짐 |
+| **③** | **웹소켓(plain-ws)이 자체 검증** ✅ 채택 | 발급처(Spring)와 같은 `JWT_SECRET`만 공유하면 plain-ws가 `jwt.verify`로 자급자족. 외부 왕복 0회, 핫패스 그대로 | 토큰 만료 시 클라가 스스로 갱신분을 다시 올려줘야 함 → `authRefresh` 메시지로 해결 |
+
+### 왜 ③인가
+- plain-ws는 이미 **hello에서 JWT를 검증**하고 있다(같은 `JWT_SECRET` 보유). 검증 능력이 이미 그 안에 있으므로, 매 메시지 재검증도 **외부 호출 없이** 가능하다.
+- ①은 "채팅은 MongooseIM에 안 태운다"는 5주차 합의를, ②는 "plain-ws는 stateless 라우터"라는 분담을 각각 깨뜨린다. ③만 현재 구조를 유지한다.
+
+### 동작 (구현 완료, 2026-06-01)
+```
+hello(token)  ──▶ plain-ws: jwt.verify → 성공 시 authToken 보관
+msg           ──▶ plain-ws: jwt.verify(authToken) 재검증
+                   └ 만료/위조 → {error: token_expired} + close 4002
+authRefresh(token) ──▶ plain-ws: 새 토큰 검증 + sub 일치 확인 → authToken 교체
+                        └ sub 불일치 → close 4002
+```
+- 클라(react-client)는 **만료 5분 전 자동 리프레시**(`/auth/refresh`) 성공 직후
+  `sendAuthRefresh(token)`으로 갱신 토큰을 plain-ws에 올려, 소켓을 끊지 않고 토큰만 교체한다.
+
+| 위치 | 구현 |
+|---|---|
+| `plain-ws/server.js` | hello 시 `authToken` 보관 · `msg` 진입마다 `jwt.verify` 재검증 · `authRefresh` 핸들러 (만료/sub불일치 → close 4002) |
+| `react-client/src/lib/ws.ts` | `sendAuthRefresh(token)` export · `authRefreshed` 수신 로깅 |
+| `react-client/src/lib/refresh.ts` | 자동 리프레시 성공 직후 `sendAuthRefresh()` 호출 |
 
 ---
 

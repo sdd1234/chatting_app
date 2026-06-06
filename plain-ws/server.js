@@ -349,6 +349,9 @@ function presenceOn(user, on) {
 wss.on('connection', (ws, req) => {
   let user = null;
   let deviceId = null;
+  // 6주차 ③안: hello 시 검증한 토큰을 보관해두고 모든 msg 진입 시 재검증.
+  //   만료/위조 시 4002 로 close. 클라가 자동 리프레시한 경우 authRefresh 메시지로 갱신.
+  let authToken = null;
   ws.isAlive = true;                                   // 마지막 pong 시각 트래커
   ws.on('pong', () => { ws.isAlive = true; });          // 클라이언트 자동 pong 응답 시 갱신
   console.log(`[+] connection from ${req.socket.remoteAddress}`);
@@ -387,6 +390,7 @@ wss.on('connection', (ws, req) => {
 
         user = claimedUser;
         deviceId = m.deviceId;
+        authToken = m.token;
         const deviceType = (typeof m.deviceType === 'string') ? m.deviceType : 'web';
 
         // 같은 (user, deviceId) 재접속 — 이전 소켓만 교체. 다른 deviceId 의 세션은 그대로.
@@ -420,12 +424,43 @@ wss.on('connection', (ws, req) => {
 
       if (!user) return send(ws, { type: 'error', message: 'login first (send hello)' });
 
+      // ── authRefresh ──────────────────────────────────────
+      //   클라가 만료 5분 전 자동으로 새 access token 받았을 때 ws 에도 알려줌.
+      //   payload.sub 가 hello 때 user 와 일치해야 함 (다른 사람 토큰으로 갈아끼우는 변조 방지).
+      if (m.type === 'authRefresh') {
+        if (!m.token || typeof m.token !== 'string') {
+          return send(ws, { type: 'error', code: 'token_required', message: 'token required for authRefresh' });
+        }
+        let payload;
+        try {
+          payload = jwt.verify(m.token, JWT_SECRET, { algorithms: ['HS256'] });
+        } catch (e) {
+          send(ws, { type: 'error', code: 'invalid_token', message: 'authRefresh failed: ' + e.message });
+          return ws.close(4002, 'authRefresh invalid');
+        }
+        if (payload.sub !== user) {
+          send(ws, { type: 'error', code: 'sub_mismatch', message: `authRefresh sub mismatch (hello=${user}, refresh=${payload.sub})` });
+          return ws.close(4002, 'sub mismatch');
+        }
+        authToken = m.token;
+        send(ws, { type: 'authRefreshed', exp: payload.exp });
+        console.log(`    authRefresh ${user}/${deviceId} new exp=${new Date(payload.exp * 1000).toISOString()}`);
+        return;
+      }
+
       // ── msg ───────────────────────────────────────────────
       //   발신자 본인의 다른 디바이스 → carbon copy (어디서 봐도 동기화).
       //   수신자: 모든 활성 디바이스에 fan-out.
       //          한 디바이스라도 온라인이면 Redis 적재 없이 즉시 send 만.
       //          모든 디바이스 오프라인이면 inbox 큐에 적재.
       if (m.type === 'msg') {
+        // 6주차 ③안: 매 메시지 진입 시 토큰 재검증. 만료/위조 → close 4002.
+        try {
+          jwt.verify(authToken, JWT_SECRET, { algorithms: ['HS256'] });
+        } catch (e) {
+          send(ws, { type: 'error', code: 'token_expired', message: 'token expired — send authRefresh first: ' + e.message });
+          return ws.close(4002, 'token expired');
+        }
         if (!m.to || typeof m.body !== 'string') {
           return send(ws, { type: 'error', message: 'to + body required' });
         }

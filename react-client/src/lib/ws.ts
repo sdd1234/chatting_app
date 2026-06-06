@@ -39,6 +39,9 @@ export function connectWS(myUser: string) {
       pendingSends = [];
     } else if (m.type === 'msg') {
       handleIncomingMsg(myUser, m);
+    } else if (m.type === 'authRefreshed') {
+      // 서버가 새 토큰 확인 — exp(seconds) 로깅만
+      console.log('[ws] authRefreshed exp=', new Date((m.exp || 0) * 1000).toISOString());
     } else if (m.type === 'error') {
       console.warn('[ws error]', m);
     }
@@ -88,6 +91,14 @@ function handleSys(myUser: string, m: any, sig: SysSignal) {
     if (m.from === myUser) return; // 본인 echo 무시
     useChat.getState().applyRead(sig.ids, m.from);
   }
+}
+
+// refresh.ts 가 새 access token 받은 직후 호출.
+// 서버(plain-ws)는 msg 진입 시 hello 때 받은 토큰을 다시 verify 하므로,
+// 클라가 토큰을 갱신하면 ws 에도 알려줘야 close 4002 안 맞는다.
+export function sendAuthRefresh(token: string) {
+  if (!ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({ type: 'authRefresh', token }));
 }
 
 export function sendMessage(to: string, body: string) {

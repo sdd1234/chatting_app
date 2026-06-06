@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { getToken, refresh, logout } from './api';
 import { msUntilExp } from './jwt';
 import { useAuth } from './store';
+import { sendAuthRefresh } from './ws';
 
 const REFRESH_LEAD_MS = 5 * 60 * 1000; // 만료 5분 전
 const MIN_DELAY_MS = 5_000;            // 너무 자주 안 부르게 하한
@@ -62,6 +63,9 @@ async function runRefresh() {
   try {
     const data = await refresh();
     useAuth.getState().setAuth(data.user, data.role, data.token);
+    // 6주차 ③안: 서버는 msg 진입 시 hello 때 받은 토큰을 다시 verify 하므로
+    //   클라가 갱신하면 ws 에도 새 토큰을 알려야 한다.
+    sendAuthRefresh(data.token);
     useRefreshStatus.setState({
       lastRefreshAt: Date.now(),
       expiresAt: Date.now() + (data.expiresInMs ?? 3_600_000),

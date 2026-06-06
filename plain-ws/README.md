@@ -227,7 +227,8 @@ server.js 안:                           mongoose_c2s
 - 멀티 디바이스 (carbon copy) — ✅ 지원. 한 user 가 deviceId 다른 디바이스로 동시 접속 + fan-out.
 - **서버측 채팅 archive** — 아예 안 가짐. 클라 localStorage 가 archive 역할 (카톡식).
 - **디바이스 간 과거 기록 동기화** — 새 디바이스로 처음 hello 한 경우 그 디바이스의 localStorage 는 비어있음 (지난 기록 못 봄). 이건 카톡과 다른 부분 — 카톡은 서버 측 백업이 있음. 이 데모는 의도적으로 안 함. 새 메시지부터는 carbon copy 로 동기화됨.
-- **refresh token / 토큰 만료 처리** — Spring access token 1시간. 만료 후 hello 가 4001 로 끊어지면 클라가 자동 재로그인해야 함. 현재 데모는 알람만, 자동 재로그인 미구현.
+- **메시지 송신 시 토큰 만료 검증** — ✅ 구현 (6주차 ③안). hello 한 번이 아니라 **매 `msg` 진입마다 `jwt.verify(authToken)` 재검증** → 만료/위조 시 `token_expired` + close 4002. 클라가 자동 리프레시한 토큰은 `authRefresh` 메시지로 소켓 유지한 채 교체(만료/sub불일치 → 4002). 검증을 ①메인서버 ②매 send마다 Spring 경유 ③plain-ws 자체 중 **③ 채택** — 외부 왕복 0회로 stateless 라우터 구조 유지. 상세 비교는 루트 `README.md` "6주차 ①" 절 참조.
+- **refresh token rotation** — 위 갱신은 access token 재발급(만료 5분 전 자동). rotation/재사용 탐지는 운영급이라 미구현.
 
 이번 과제 3·4번 (XMPP 안 쓰고 WS만으로 통신 + Redis는 오프라인 임시버퍼 전용 + 채팅은 클라 메모리) 의 최소 동작 데모 목적이라 이 정도까지만.
 
