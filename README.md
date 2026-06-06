@@ -1,8 +1,8 @@
 # Chatting App — MongooseIM 기반 카톡 클론
 
-[MongooseIM](https://github.com/esl/MongooseIM) (Erlang XMPP 서버) 위에 **Spring Boot 사이드카** + **Node.js 채팅 라우터** + **React 카톡 UI** 를 얹어, 카카오톡 수준의 메신저 기능을 시연하는 학습/포트폴리오 프로젝트입니다.
+[MongooseIM](https://github.com/esl/MongooseIM) (Erlang XMPP 서버) 위에 **Spring Boot 사이드카** + **Node.js 채팅 라우터** + **React 카톡 UI** + **React Native(Expo) 모바일 앱** 을 얹어, 카카오톡 수준의 메신저 기능을 시연하는 학습/포트폴리오 프로젝트입니다.
 
-> 5주차 산출물 — Spring Boot + React 프레임워크로 통합 완료. 6주차 미팅에서 React Native (Expo) 전환과 토큰 만료 검증 강화가 결정됨.
+> 6주차 산출물 — ① 메시지 송신 시 토큰 만료 검증(plain-ws 자체) ② React → React Native(Expo) 전환 + 파일 첨부·번역 기능 추가. 웹(react-client)·모바일(expo-client) 양쪽 지원.
 
 ---
 
@@ -28,12 +28,23 @@ npm install
 node server.js   # :8090 JSON-over-WebSocket
 ```
 
-### 3. React 카톡 UI 기동
+### 3. React 카톡 UI 기동 (웹)
 ```bash
 cd react-client
 npm install
 npm run dev      # http://localhost:5173
 ```
+> WSL 의 `/mnt/c`(9p) 에서 돌리면 vite 가 파일변경을 못 잡으므로 `vite.config.ts` 의
+> `server.watch.usePolling: true` 로 HMR 을 정상화해 둠.
+
+### 3-1. (선택) Expo 모바일 앱 기동
+```bash
+cd expo-client
+npm install
+npx expo start   # QR → Expo Go(실기기) 또는 a/i(에뮬레이터)
+```
+> 실기기/에뮬에서 `localhost` 는 PC 가 아니므로 `src/lib/config.ts` 가 Metro hostUri 로 PC IP 를
+> 자동 추출(안 맞으면 `MANUAL_HOST` 수동 지정). WSL2↔폰은 같은 LAN + 8081/8090 노출 필요.
 
 ### 4. 브라우저로 접속
 - **카톡 UI**: http://localhost:5173 (자동으로 슬롯 분배됨, 새 탭 = 새 디바이스/계정)
@@ -102,6 +113,9 @@ MongooseIM/
 │       │   ├── UserService.java            # Mongoose에 인증/가입 위임
 │       │   ├── JwtUtil.java                # HS256 발급/검증
 │       │   ├── MongooseGraphqlController.java # Mongoose 프록시 (admin)
+│       │   ├── UserDirectoryController.java # /users (일반 user 친구목록)
+│       │   ├── TranslateController.java     # /translate (구글 비공식 프록시)
+│       │   ├── FileController.java          # /files 업로드·다운로드 (로컬 저장)
 │       │   ├── AdminController.java        # /admin/notice
 │       │   ├── NoticeWebSocketHandler.java # /ws/notice 브로드캐스트
 │       │   └── ...
@@ -128,13 +142,26 @@ MongooseIM/
 │       │   ├── slot.ts                # ?slot= 격리 헬퍼
 │       │   ├── heartbeat.ts           # 슬롯 살아있음 알림
 │       │   ├── group.ts               # 단톡 fanout 인코딩
-│       │   └── sys.ts                 # 읽음/타이핑 신호
+│       │   ├── sys.ts                 # 읽음/타이핑 신호
+│       │   ├── files.ts               # 파일/이미지 업로드 + \x01FILE\x01 인코딩
+│       │   └── translate.ts           # 번역 (Spring /translate 프록시)
 │       └── components/
 │           ├── TokenStatus.tsx        # JWT 카운트다운 배지
 │           ├── NewGroupModal.tsx
 │           ├── NoticeComposeModal.tsx
 │           ├── NoticeToast.tsx
 │           └── Avatar.tsx
+│
+├── expo-client/                # 모바일 앱 (React Native + Expo SDK 56)
+│   ├── App.tsx                         # 인증 기반 네비게이션 + WS 연결
+│   └── src/
+│       ├── lib/                        # config storage jwt api store ws
+│       │                               #  refresh translate files settings
+│       ├── screens/                    # Login Register Chats
+│       │                               #  ChatRoom(첨부+번역) Settings(언어)
+│       └── nav/types.ts
+│   # 웹→RN 치환: localStorage→AsyncStorage(+SecureStore), atob→base-64,
+│   #   react-router→React Navigation, vite proxy→config.ts 절대URL
 │
 ├── plain-ws/                   # 채팅 라우터 (Node + ws + Redis)
 │   ├── server.js                       # :8090 메인 (hello/msg/inbox)
@@ -153,20 +180,27 @@ MongooseIM/
 
 ---
 
-## 구현된 기능 (5주차까지 완료)
+## 구현된 기능
 
 ### ✅ 메신저 핵심
 - [x] 로그인 (Spring → Mongoose `checkPassword` 위임)
 - [x] 회원가입 (Spring → Mongoose `registerUser` + Redis role 시드)
 - [x] JWT 발급 (HS256, 1시간) + 자동 리프레시 (만료 5분 전, 우상단 카운트다운 배지)
+- [x] **메시지 송신 시 토큰 만료 재검증** (plain-ws 자체, 6주차 ① — 아래 섹션)
 - [x] 1:1 채팅 (실시간 송수신, Redis offline inbox)
 - [x] **단톡방** (클라이언트 fanout, 서버 무변경, 멤버 fixed)
+- [x] **파일/이미지 첨부** (Spring `/files` 로컬 저장, 웹↔모바일 인코딩 호환)
+- [x] **번역** (상대 메시지 → 선택 언어, 번역문만 표시 + "원본 보기" 토글, Spring `/translate` 구글 비공식)
 - [x] **디바이스 묶음 세션** (같은 user의 N디바이스 동시 접속 + carbon copy)
 - [x] **읽음 "1"** / 안 읽음 카운트 (방 들어가면 자동 read)
 - [x] **타이핑 "..."** bouncing (5초 자동 만료)
 - [x] **단체 공지** (admin 전용 push, Redis pub-sub, 모든 슬롯 동시 토스트)
-- [x] 친구 목록 (Mongoose `listUsers` 프록시)
+- [x] 친구 목록 (`/users` — 일반 user 도 조회, Mongoose `listUsers` 프록시)
 - [x] 메시지 영구 저장 (plain-ws → Mongoose `sendMessage` 미러링 → mod_mam)
+
+### ✅ 클라이언트
+- [x] **웹** (react-client) — React 18 + Vite, 카톡 UI, 자동 슬롯 분배
+- [x] **모바일** (expo-client) — React Native + Expo SDK 56, 동일 기능 포팅 (단톡/읽음/타이핑은 추후)
 
 ### ✅ 시연 편의
 - [x] **자동 슬롯 분배** — 한 PC에서 새 탭 열기만 하면 자동으로 다른 디바이스로 격리
@@ -193,7 +227,7 @@ MongooseIM/
 | **3주차** | 웹소켓 직접 송신 (XMPP 미경유), DB 휘발성 → Redis 교체, API 문서화 | ✅ |
 | **4주차** | 세션 Redis 분리 (디바이스 묶음), Raids 테이블, Spring 도커화, GraphQL 패킷 분석 | ✅ |
 | **5주차** | **Spring Boot + React 프레임워크 통합** (이번 산출물) | ✅ |
-| **6주차** | ① 메시지 송신 시 토큰 만료 검증 = plain-ws 자체 (③안)<br>② React → React Native **Expo CLI** 전환 (RN CLI 금지) | ① ✅ 완료 / ② 🔜 진행 중 |
+| **6주차** | ① 메시지 송신 시 토큰 만료 검증 = plain-ws 자체 (③안)<br>② React → React Native **Expo CLI** 전환 (RN CLI 금지) + 파일첨부·번역 | ① ✅ / ② ✅ (실폰 구동만 남음) |
 
 자세한 미팅 결정사항: 위 표의 6주차 항목 참조
 
@@ -235,15 +269,52 @@ authRefresh(token) ──▶ plain-ws: 새 토큰 검증 + sub 일치 확인 →
 
 ---
 
+## 6주차 ② — React Native(Expo) 전환 + 파일·번역
+
+미팅 결정: **Expo CLI** 사용(RN CLI 금지). 기존 `react-client`(PC 웹) 는 시연용으로 유지하고,
+화면/로직을 `expo-client` 모바일 앱으로 포팅하면서 **파일 첨부**와 **번역** 을 신규로 추가했다.
+
+### 웹 → React Native 치환
+| 웹(react-client) | 모바일(expo-client) |
+|---|---|
+| `localStorage` (동기) | `AsyncStorage` + 토큰은 `expo-secure-store` (전부 async) |
+| `atob` (JWT 디코드) | `base-64` 패키지 |
+| `react-router-dom` | `@react-navigation/native-stack` |
+| Vite proxy (`/auth` `/ws` …) | `src/lib/config.ts` 절대 URL (Metro hostUri 로 PC IP 자동 추출) |
+| 슬롯 멀티 인스턴스(`?slot=`) | 없음 (모바일은 단일 인스턴스) |
+
+### 파일 첨부 (신규)
+- 업로드: `POST /files/upload` (multipart) → Spring 이 **로컬 폴더**(`spring-server/uploads/`) 에 저장.
+  `{id}` + `{id}.meta`(name/mime/owner) 사이드카. 도커는 `./spring-server/uploads` 볼륨 마운트.
+- 표시: `GET /files/{id}` — 이미지면 미리보기, 아니면 파일 링크.
+- 채팅 전송: 파일 메타를 메시지 body 에 `\x01FILE\x01` prefix 로 인코딩(`group`/`sys` 와 같은 컨벤션).
+  **웹·모바일이 같은 포맷** → expo 사용자 ↔ 웹 사용자가 주고받은 파일을 서로 디코드.
+- 업로드된 실제 파일은 `.gitignore` 로 git 에서 제외(코드만 버전관리).
+
+### 번역 (신규)
+- `POST /translate` → Spring 이 **구글 비공식 엔드포인트**(`translate.googleapis.com/translate_a/single`, 키 불필요) 프록시. 1주차 번역 기능의 재활용.
+- 토글 ON 시 상대 메시지를 선택 언어로 **번역문만** 표시하고, 말풍선 아래 **"원본 보기"** 토글로 원본 확인.
+
+### `/users` (친구 목록 권한)
+- 기존 `/admin/mongoose/users` 는 admin 전용이라 일반 user 가 친구목록을 못 봤음.
+  `GET /users` 신설 — JWT 만 검증(role 무관), Spring 이 admin 자격으로 `listUsers` 프록시.
+
+> ⚠️ `expo-client` 의 실기기 구동은 WSL2↔폰 LAN 접근 설정이 필요(아직 미검증).
+> 웹(react-client)·Spring 백엔드는 5서비스 기동 후 end-to-end 동작 확인 완료.
+
+---
+
 ## 기술 스택
 
 | 레이어 | 기술 |
 |---|---|
-| 프론트엔드 | React 18, Vite, TypeScript, Tailwind CSS v3, Zustand, react-router-dom |
+| 프론트엔드 (웹) | React 18, Vite, TypeScript, Tailwind CSS v3, Zustand, react-router-dom |
+| 프론트엔드 (모바일) | React Native, Expo SDK 56, React Navigation, AsyncStorage, expo-secure-store, expo-image/document-picker |
 | 백엔드 (사이드카) | Spring Boot 3.4, Java 21, Maven, jjwt (HS256), RestClient |
 | 채팅 라우터 | Node.js, ws, jsonwebtoken, ioredis |
 | 메시지 서버 | MongooseIM (Erlang/OTP, XMPP) |
-| 저장 | PostgreSQL 16 (mod_mam), Redis 7, MinIO (S3 호환) |
+| 저장 | PostgreSQL 16 (mod_mam), Redis 7, MinIO (S3 호환), 로컬 폴더(파일 첨부) |
+| 번역 | 구글 비공식 translate 엔드포인트 (Spring 프록시) |
 | 인프라 | Docker Compose, WSL2 (개발 환경) |
 
 ---
@@ -255,6 +326,8 @@ authRefresh(token) ──▶ plain-ws: 새 토큰 검증 + sub 일치 확인 →
 | [XMPP_STANZAS.md](./XMPP_STANZAS.md) | `websocket-client/` 가 주고받는 실제 XMPP XML 스탠자 카탈로그 |
 | [API.md](./API.md) | Spring REST + plain-ws WS 엔드포인트 전체 명세 |
 | [CHEATSHEET.md](./CHEATSHEET.md) | 빠른 실행 / 디버깅 치트시트 |
+| [plain-ws/README.md](./plain-ws/README.md) | 채팅 라우터 프로토콜·Redis 구조·토큰 재검증 |
+| [expo-client/README.md](./expo-client/README.md) | 모바일 앱 화면·웹→RN 치환·실행법 |
 
 ---
 
