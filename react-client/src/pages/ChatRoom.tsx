@@ -6,15 +6,19 @@ import {
   dmKey, groupKey,
   unreadIndicatorFor,
 } from '../lib/store';
-import type { ChatMessage, GroupInfo } from '../lib/store';
+import type { ChatMessage } from '../lib/store';
 import {
   sendMessage, sendGroupMessage,
   sendReadDM, sendReadGroup,
   sendTypingDM, sendTypingGroup,
+  sendFileMessage,
 } from '../lib/ws';
+import { uploadFile } from '../lib/files';
+import { translate, LANGS } from '../lib/translate';
 import { Avatar } from '../components/Avatar';
 
 const TYPING_EMIT_THROTTLE_MS = 2_500;
+const TRANS_LANG_KEY = 'plainws_translate_lang_v1';
 
 export function ChatRoom() {
   const params = useParams<{ user?: string; groupId?: string }>();
@@ -41,10 +45,34 @@ export function ChatRoom() {
     : (other ? getDmMessages(me, other, rooms) : []);
 
   const [text, setText] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [translateOn, setTranslateOn] = useState(false);
+  const [transLang, setTransLang] = useState(() => localStorage.getItem(TRANS_LANG_KEY) || 'ko');
   const nav = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const lastTypingEmitRef = useRef<number>(0);
   const lastReadSentRef = useRef<Set<string>>(new Set());
+
+  function changeLang(code: string) {
+    setTransLang(code);
+    localStorage.setItem(TRANS_LANG_KEY, code);
+  }
+
+  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = ''; // 같은 파일 재선택 허용
+    if (!f || !other) return; // 파일 첨부는 1:1 만
+    setUploading(true);
+    try {
+      const meta = await uploadFile(f);
+      sendFileMessage(other, meta);
+    } catch (err: any) {
+      alert('첨부 실패: ' + (err?.message ?? err));
+    } finally {
+      setUploading(false);
+    }
+  }
 
   // 방 열기/닫기 — unreadCount 리셋
   useEffect(() => {
@@ -133,7 +161,27 @@ export function ChatRoom() {
           <div className="font-semibold text-base truncate">{title}</div>
           {subtitle && <div className="text-[10px] text-gray-600 truncate">{subtitle}</div>}
         </div>
-        <button className="px-2 text-xl">☰</button>
+        {/* 번역 토글 + 대상 언어 */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setTranslateOn((v) => !v)}
+            className={`px-2 py-1 rounded-md text-xs font-semibold ${translateOn ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+            title="상대 메시지 번역"
+          >
+            🌐 {translateOn ? 'ON' : '번역'}
+          </button>
+          {translateOn && (
+            <select
+              value={transLang}
+              onChange={(e) => changeLang(e.target.value)}
+              className="text-xs bg-gray-100 rounded-md px-1 py-1 outline-none"
+            >
+              {LANGS.map((l) => (
+                <option key={l.code} value={l.code}>{l.label}</option>
+              ))}
+            </select>
+          )}
+        </div>
       </div>
 
       {/* 메시지 영역 */}
@@ -157,6 +205,8 @@ export function ChatRoom() {
               mine={mine}
               showSender={showSender}
               unread={unread}
+              translateOn={translateOn}
+              transLang={transLang}
             />
           );
         })}
@@ -169,6 +219,25 @@ export function ChatRoom() {
 
       {/* 입력바 */}
       <div className="bg-white border-t border-gray-300 px-2 py-2 flex items-end gap-2">
+        {/* 파일 첨부 (1:1 만) */}
+        {!isGroup && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={onPickFile}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              title="파일/이미지 첨부"
+              className="px-2 py-2 text-xl disabled:opacity-40"
+            >
+              {uploading ? '⏳' : '📎'}
+            </button>
+          </>
+        )}
         <textarea
           value={text}
           onChange={(e) => onInput(e.target.value)}
@@ -178,7 +247,7 @@ export function ChatRoom() {
               send();
             }
           }}
-          placeholder="메시지 입력"
+          placeholder={uploading ? '업로드 중…' : '메시지 입력'}
           rows={1}
           className="flex-1 resize-none outline-none px-3 py-2 bg-gray-100 rounded-lg text-sm max-h-24"
         />
@@ -195,11 +264,22 @@ export function ChatRoom() {
 }
 
 function Bubble({
-  msg, mine, showSender, unread,
+  msg, mine, showSender, unread, translateOn, transLang,
 }: {
   msg: ChatMessage; mine: boolean; showSender: boolean; unread: number;
+  translateOn: boolean; transLang: string;
 }) {
   const time = fmtTime(msg.ts);
+  const [translated, setTranslated] = useState<string | null>(null);
+
+  // 번역 토글 ON + 상대 메시지(텍스트) → 대상 언어로 번역
+  useEffect(() => {
+    if (!translateOn || mine || msg.file || !msg.body) { setTranslated(null); return; }
+    let alive = true;
+    translate(msg.body, transLang).then((t) => { if (alive) setTranslated(t); }).catch(() => {});
+    return () => { alive = false; };
+  }, [translateOn, mine, msg.body, msg.file, transLang]);
+
   if (mine) {
     return (
       <div className="flex justify-end items-end gap-1">
@@ -210,7 +290,7 @@ function Bubble({
           <div className="text-[10px] text-gray-600 leading-none mt-0.5">{time}</div>
         </div>
         <div className="max-w-[70%] bg-kakao-bubbleMe text-black px-3 py-2 rounded-2xl rounded-tr-md whitespace-pre-wrap break-words text-sm">
-          {msg.body}
+          <BubbleContent msg={msg} />
         </div>
       </div>
     );
@@ -222,13 +302,39 @@ function Bubble({
         {showSender && <div className="text-xs text-gray-700">{msg.from}</div>}
         <div className="flex items-end gap-1">
           <div className="max-w-[260px] bg-kakao-bubbleOther text-black px-3 py-2 rounded-2xl rounded-tl-md whitespace-pre-wrap break-words text-sm shadow-sm">
-            {msg.body}
+            <BubbleContent msg={msg} />
+            {translated != null && (
+              <div className="mt-1 pt-1 border-t border-black/10 text-[13px] text-green-700">🌐 {translated}</div>
+            )}
           </div>
           <div className="text-[10px] text-gray-600 mb-1">{time}</div>
         </div>
       </div>
     </div>
   );
+}
+
+/** 버블 내용 — 파일/이미지면 첨부 렌더, 아니면 텍스트. */
+function BubbleContent({ msg }: { msg: ChatMessage }) {
+  if (msg.file) {
+    const isImg = msg.file.mime.startsWith('image/');
+    return (
+      <div>
+        {isImg ? (
+          <a href={msg.file.url} target="_blank" rel="noreferrer">
+            <img src={msg.file.url} alt={msg.file.name} className="max-w-[200px] max-h-[200px] rounded-lg" />
+          </a>
+        ) : (
+          <a href={msg.file.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 underline">
+            <span className="text-xl">📎</span>
+            <span className="break-all">{msg.file.name}</span>
+          </a>
+        )}
+        {msg.body && <div className="mt-1">{msg.body}</div>}
+      </div>
+    );
+  }
+  return <>{msg.body}</>;
 }
 
 function TypingIndicator({ users, isGroup }: { users: string[]; isGroup: boolean }) {

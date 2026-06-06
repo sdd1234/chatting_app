@@ -5,6 +5,8 @@ import type { ChatMessage, GroupInfo } from './store';
 import { decodeGroupBody, encodeGroupBody, newCid } from './group';
 import { decodeSysBody, encodeSysBody } from './sys';
 import type { SysSignal } from './sys';
+import { decodeFileBody, encodeFileBody } from './files';
+import type { FileMeta } from './files';
 
 let ws: WebSocket | null = null;
 let connected = false;
@@ -74,7 +76,16 @@ function handleIncomingMsg(myUser: string, m: any) {
     useChat.getState().appendMessage(myUser, msg);
     return;
   }
-  // 3) 일반 1:1 메시지
+  // 3) 파일/이미지 첨부 (1:1)
+  const file = decodeFileBody(m.body);
+  if (file) {
+    const msg: ChatMessage = {
+      id: m.id, from: m.from, to: m.to, body: file.body, ts: m.ts, file: file.file,
+    };
+    useChat.getState().appendMessage(myUser, msg);
+    return;
+  }
+  // 4) 일반 1:1 메시지
   const msg: ChatMessage = {
     id: m.id, from: m.from, to: m.to, body: m.body, ts: m.ts,
   };
@@ -105,6 +116,11 @@ export function sendMessage(to: string, body: string) {
   const payload = JSON.stringify({ type: 'msg', to, body });
   if (ws && connected) ws.send(payload);
   else pendingSends.push(payload);
+}
+
+/** 파일/이미지 첨부 메시지 (1:1). body 를 파일 메타로 인코딩해 전송. */
+export function sendFileMessage(to: string, file: FileMeta, caption = '') {
+  sendMessage(to, encodeFileBody(file, caption));
 }
 
 export function sendGroupMessage(myUser: string, group: GroupInfo, body: string) {

@@ -89,11 +89,11 @@ export function logout() {
 
 export async function fetchUsers(): Promise<string[]> {
   const token = getToken();
-  const r = await fetch('/admin/mongoose/users', {
+  // /users 는 일반 user 도 허용(role 무관). 기존 /admin/mongoose/users 는 admin 전용이었음.
+  const r = await fetch('/users', {
     headers: { 'Authorization': 'Bearer ' + token },
   });
   if (!r.ok) {
-    // admin role 아니면 403. 다른 방법으로 데모용 fallback.
     return [];
   }
   const data = await r.json();

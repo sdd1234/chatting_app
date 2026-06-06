@@ -9,6 +9,9 @@ export default defineConfig({
     proxy: {
       '/auth':           { target: 'http://localhost:8081', changeOrigin: true },
       '/admin':          { target: 'http://localhost:8081', changeOrigin: true },
+      '/users':          { target: 'http://localhost:8081', changeOrigin: true },
+      '/translate':      { target: 'http://localhost:8081', changeOrigin: true },
+      '/files':          { target: 'http://localhost:8081', changeOrigin: true },
       '/ws/notice':      { target: 'ws://localhost:8081', ws: true, changeOrigin: true },
       '/ws':             { target: 'ws://localhost:8090', ws: true, changeOrigin: true },
       '/redis-state':    { target: 'http://localhost:8090', changeOrigin: true },
