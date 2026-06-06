@@ -133,6 +133,10 @@ services:
       MONGOOSE_GRAPHQL_URL:  http://xmpp-server:5551/api/graphql
       MONGOOSE_GRAPHQL_USER: admin
       MONGOOSE_GRAPHQL_PASS: secret
+      FILE_STORAGE_DIR: /data/uploads
+    volumes:
+      # 업로드 파일을 호스트(바탕화면 프로젝트 폴더)에 영속. git 은 .gitignore 로 제외.
+      - ./spring-server/uploads:/data/uploads
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health | grep -q UP || exit 1"]
       interval: 30s

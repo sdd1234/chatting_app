@@ -93,10 +93,10 @@ export async function logout(): Promise<void> {
   // 채팅 히스토리는 유지 (재로그인 시 같은 키로 복원)
 }
 
-/** 친구 목록 = Mongoose 등록 사용자. admin role 아니면 403 → 빈 배열. */
+/** 친구 목록 = Mongoose 등록 사용자. /users 는 일반 user 도 허용(role 무관). */
 export async function fetchUsers(): Promise<string[]> {
   const token = await getToken();
-  const r = await fetch(`${SPRING_BASE}/admin/mongoose/users`, {
+  const r = await fetch(`${SPRING_BASE}/users`, {
     headers: { Authorization: 'Bearer ' + token },
   });
   if (!r.ok) return [];
