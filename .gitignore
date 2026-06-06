@@ -42,3 +42,6 @@ data/
 postgres-data/
 minio-data/
 redis-data/
+
+# ── 사용자 업로드 파일 (코드 아님 — 데이터는 git 제외, 도커는 볼륨 마운트)
+spring-server/uploads/

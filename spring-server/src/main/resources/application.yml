@@ -11,6 +11,15 @@ spring:
       host: ${REDIS_HOST:xmpp-redis}
       port: ${REDIS_PORT:6379}
       timeout: 2s
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+# 파일 업로드 저장 폴더 (도커 기동 시 호스트 볼륨 마운트 대상)
+file:
+  storage:
+    dir: ${FILE_STORAGE_DIR:uploads}
 
 # JWT
 jwt:
