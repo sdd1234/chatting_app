@@ -2,6 +2,7 @@
   "expo": {
     "name": "kakao-clone",
     "slug": "kakao-clone",
+    "owner": "sinclair1324",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -19,9 +20,14 @@
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FEE500"
       },
-      "edgeToEdgeEnabled": true
+      "usesCleartextTraffic": true,
+      "package": "com.sinclair1324.kakaoclone",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro"
@@ -30,7 +36,19 @@
       "expo-secure-store",
       "expo-image-picker",
       "expo-document-picker",
-      "expo-status-bar"
-    ]
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f835a2c7-a807-4555-b870-1a0cc6a29324"
+      }
+    }
   }
 }

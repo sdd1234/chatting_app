@@ -7,8 +7,14 @@
 // ⚠️ Spring 측 /files/* 컨트롤러는 아직 미구현(남은 작업). 클라 경로만 준비.
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { SPRING_BASE } from './config';
 import { getToken } from './api';
+
+/** 파일 id 로 수신자 기준 절대 URL 구성 (발신자 url 무시 — 웹/앱 호환). */
+export function fileUrl(id: string): string {
+  return `${SPRING_BASE}/files/${id}`;
+}
 
 export interface FileMeta {
   id: string;
@@ -53,24 +59,27 @@ export async function pickImage(): Promise<LocalPick | null> {
   return { uri: a.uri, name, mime: a.mimeType ?? 'image/jpeg' };
 }
 
-/** 선택한 로컬 파일을 Spring 에 업로드하고 FileMeta 반환. */
+/** 선택한 로컬 파일을 Spring 에 업로드하고 FileMeta 반환.
+ *  RN 0.85 의 FormData 가 {uri,name,type} 파트를 거부("Unsupported FormDataPart")하므로
+ *  expo-file-system 의 uploadAsync(MULTIPART) 로 네이티브 업로드한다. */
 export async function uploadFile(pick: LocalPick): Promise<FileMeta> {
   const token = await getToken();
-  const form = new FormData();
-  // RN multipart: { uri, name, type } 형태로 append
-  form.append('file', { uri: pick.uri, name: pick.name, type: pick.mime } as any);
-
-  const r = await fetch(`${SPRING_BASE}/files/upload`, {
-    method: 'POST',
+  const res = await uploadAsync(`${SPRING_BASE}/files/upload`, pick.uri, {
+    httpMethod: 'POST',
+    uploadType: FileSystemUploadType.MULTIPART,
+    fieldName: 'file',
+    mimeType: pick.mime,
+    parameters: { name: pick.name },
     headers: { Authorization: 'Bearer ' + token },
-    body: form,
   });
-  if (!r.ok) throw new Error('업로드 실패: ' + r.status);
-  const data = await r.json();
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error('업로드 실패: ' + res.status);
+  }
+  const data = JSON.parse(res.body);
   return {
     id: data.id,
     name: data.name ?? pick.name,
     mime: data.mime ?? pick.mime,
-    url: data.url ?? `${SPRING_BASE}/files/${data.id}`,
+    url: fileUrl(data.id),
   };
 }

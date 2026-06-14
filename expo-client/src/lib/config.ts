@@ -12,7 +12,7 @@
 // 자동 추출이 안 맞으면 아래 MANUAL_HOST 를 직접 박아라. (예: '192.168.0.10')
 import Constants from 'expo-constants';
 
-const MANUAL_HOST: string | null = null; // 예: '192.168.0.10'
+const MANUAL_HOST: string | null = '192.168.0.9'; // PC 의 LAN IP (폰이 같은 와이파이로 붙음)
 
 const SPRING_PORT = 8081; // 로그인 / JWT / 공지 / 번역 / 파일
 const WS_PORT = 8090;     // plain-ws 채팅 라우터
@@ -26,7 +26,11 @@ function detectHost(): string {
     (Constants.manifest2 as any)?.extra?.expoGo?.debuggerHost ||
     '';
   const host = String(hostUri).split(':')[0];
-  return host || 'localhost';
+  if (host) return host;
+  // 독립 APK(EAS Build): Metro 가 없어 hostUri 가 비어있다.
+  //  - 안드로이드 에뮬레이터: 10.0.2.2 = 호스트 PC
+  //  - 실기기: 위 MANUAL_HOST 에 PC 의 LAN IP 를 직접 박아야 한다.
+  return '10.0.2.2';
 }
 
 export const HOST = detectHost();
