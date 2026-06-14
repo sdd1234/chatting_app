@@ -30,39 +30,53 @@ export default function LoginScreen({ navigation }: Props) {
 
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Text style={styles.logo}>💬 kakao-clone</Text>
-      <Text style={styles.sub}>MongooseIM · plain-ws · Spring</Text>
+      <Text style={styles.logo}>talk</Text>
+      <Text style={styles.sub}>로그인하고 친구와 대화하세요</Text>
 
       <TextInput
-        style={styles.input} placeholder="아이디" autoCapitalize="none" autoCorrect={false}
+        style={styles.input} placeholder="아이디" placeholderTextColor="#bbb"
+        autoCapitalize="none" autoCorrect={false}
         value={user} onChangeText={setUser}
       />
       <TextInput
-        style={styles.input} placeholder="비밀번호" secureTextEntry
-        value={pw} onChangeText={setPw} onSubmitEditing={onLogin}
+        style={styles.input} placeholder="비밀번호" placeholderTextColor="#bbb" secureTextEntry
+        value={pw} onChangeText={setPw} onSubmitEditing={onLogin} returnKeyType="go"
       />
 
       <TouchableOpacity style={[styles.btn, busy && styles.btnDisabled]} onPress={onLogin} disabled={busy}>
-        {busy ? <ActivityIndicator color="#3c1e1e" /> : <Text style={styles.btnText}>로그인</Text>}
+        {busy ? <ActivityIndicator color="#191919" /> : <Text style={styles.btnText}>카카오 계정 로그인</Text>}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-        <Text style={styles.link}>회원가입</Text>
-      </TouchableOpacity>
+      <View style={styles.signupRow}>
+        <Text style={styles.signupText}>계정이 없다면 </Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+          <Text style={styles.signupLink}>회원가입</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.demo}>
+        시연 계정: admin/admin123 · jihoon/jihoon123{'\n'}emma/emma123 · minho/minho123
+      </Text>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, justifyContent: 'center', padding: 28, backgroundColor: '#fff' },
-  logo: { fontSize: 30, fontWeight: '800', textAlign: 'center', color: '#191919' },
-  sub: { fontSize: 12, color: '#999', textAlign: 'center', marginTop: 4, marginBottom: 32 },
-  input: {
-    borderWidth: 1, borderColor: '#e3e3e3', borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, marginBottom: 12, backgroundColor: '#fafafa',
+  root: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, backgroundColor: '#fff' },
+  logo: {
+    fontSize: 64, fontWeight: '900', textAlign: 'center', color: '#FEE500',
+    textShadowColor: '#999', textShadowOffset: { width: 2, height: 2 }, textShadowRadius: 0,
   },
-  btn: { backgroundColor: '#FEE500', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
-  btnDisabled: { opacity: 0.6 },
-  btnText: { fontSize: 16, fontWeight: '700', color: '#3c1e1e' },
-  link: { textAlign: 'center', color: '#666', marginTop: 18, fontSize: 14 },
+  sub: { fontSize: 13, color: '#999', textAlign: 'center', marginTop: 8, marginBottom: 44 },
+  input: {
+    borderBottomWidth: 2, borderBottomColor: '#eee',
+    paddingVertical: 12, paddingHorizontal: 4, fontSize: 16, marginBottom: 12,
+  },
+  btn: { backgroundColor: '#FEE500', borderRadius: 8, paddingVertical: 14, alignItems: 'center', marginTop: 24 },
+  btnDisabled: { opacity: 0.5 },
+  btnText: { fontSize: 16, fontWeight: '700', color: '#191919' },
+  signupRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
+  signupText: { fontSize: 14, color: '#555' },
+  signupLink: { fontSize: 14, color: '#caa400', fontWeight: '700' },
+  demo: { marginTop: 16, fontSize: 11, color: '#bbb', textAlign: 'center', lineHeight: 18 },
 });
