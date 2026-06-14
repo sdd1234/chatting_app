@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
@@ -7,6 +7,7 @@ import type { RootStackParamList } from '../nav/types';
 import { login } from '../lib/api';
 import { useAuth } from '../lib/store';
 import { getHost, setHost } from '../lib/config';
+import { discoverHost, isOurServer } from '../lib/discover';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -17,12 +18,38 @@ export default function LoginScreen({ navigation }: Props) {
   const setAuth = useAuth((s) => s.setAuth);
   const [server, setServer] = useState(getHost());
   const [showServer, setShowServer] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   async function saveServer() {
     await setHost(server);
     setShowServer(false);
     Alert.alert('서버 설정', `서버 주소를 ${server} 로 저장했습니다.\n로그인하면 적용됩니다.`);
   }
+
+  // 같은 와이파이에서 서버 IP 자동 탐지. found 시 호스트 저장.
+  async function autoDetect(silent = false) {
+    setScanning(true);
+    try {
+      const ip = await discoverHost();
+      if (ip) {
+        await setHost(ip);
+        setServer(ip);
+        if (!silent) Alert.alert('서버 찾음', `서버를 찾았습니다: ${ip}`);
+      } else if (!silent) {
+        Alert.alert('자동 탐지 실패', '같은 와이파이에서 서버를 못 찾았습니다. PC 가 켜져 있는지 확인하거나 IP 를 직접 입력하세요.');
+      }
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  // 화면 진입 시: 저장된 IP 가 안 맞으면 조용히 자동 탐지(=와이파이만 맞추면 알아서 연결).
+  useEffect(() => {
+    (async () => {
+      if (await isOurServer(getHost())) return; // 이미 맞으면 그대로
+      autoDetect(true);
+    })();
+  }, []);
 
   async function onLogin() {
     if (!user || !pw) { Alert.alert('입력', '아이디와 비밀번호를 입력하세요'); return; }
@@ -67,22 +94,29 @@ export default function LoginScreen({ navigation }: Props) {
         시연 계정: admin/admin123 · jihoon/jihoon123{'\n'}emma/emma123 · minho/minho123
       </Text>
 
-      {/* 서버 IP — 와이파이 바뀌면 PC 의 새 LAN IP 로 변경(재빌드 불필요) */}
-      <TouchableOpacity onPress={() => setShowServer((v) => !v)}>
-        <Text style={styles.serverToggle}>⚙ 서버 {getHost()} {showServer ? '▲' : '▼'}</Text>
+      {/* 서버 — 같은 와이파이면 자동 탐지. 안 되면 IP 직접 입력 */}
+      <TouchableOpacity onPress={() => setShowServer((v) => !v)} disabled={scanning}>
+        <Text style={styles.serverToggle}>
+          {scanning ? '🔍 서버 찾는 중…' : `⚙ 서버 ${getHost()} ${showServer ? '▲' : '▼'}`}
+        </Text>
       </TouchableOpacity>
       {showServer && (
-        <View style={styles.serverBox}>
-          <TextInput
-            style={styles.serverInput}
-            placeholder="예: 192.168.0.9" placeholderTextColor="#bbb"
-            autoCapitalize="none" autoCorrect={false}
-            value={server} onChangeText={setServer} onSubmitEditing={saveServer}
-          />
-          <TouchableOpacity style={styles.serverSave} onPress={saveServer}>
-            <Text style={styles.serverSaveText}>저장</Text>
+        <>
+          <View style={styles.serverBox}>
+            <TextInput
+              style={styles.serverInput}
+              placeholder="예: 192.168.0.9" placeholderTextColor="#bbb"
+              autoCapitalize="none" autoCorrect={false}
+              value={server} onChangeText={setServer} onSubmitEditing={saveServer}
+            />
+            <TouchableOpacity style={styles.serverSave} onPress={saveServer}>
+              <Text style={styles.serverSaveText}>저장</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.autoBtn} onPress={() => autoDetect(false)} disabled={scanning}>
+            <Text style={styles.autoBtnText}>{scanning ? '찾는 중…' : '🔍 같은 와이파이에서 자동 탐지'}</Text>
           </TouchableOpacity>
-        </View>
+        </>
       )}
     </KeyboardAvoidingView>
   );
@@ -111,4 +145,6 @@ const styles = StyleSheet.create({
   serverInput: { flex: 1, borderBottomWidth: 1, borderBottomColor: '#ddd', paddingVertical: 8, fontSize: 14, color: '#191919' },
   serverSave: { backgroundColor: '#eee', borderRadius: 6, paddingHorizontal: 14, paddingVertical: 8 },
   serverSaveText: { fontSize: 13, fontWeight: '700', color: '#333' },
+  autoBtn: { marginTop: 10, alignSelf: 'center', backgroundColor: '#eef4ff', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 8, borderWidth: 1, borderColor: '#cdddf5' },
+  autoBtnText: { fontSize: 13, color: '#2b6cb0', fontWeight: '600' },
 });
