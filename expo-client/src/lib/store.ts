@@ -43,6 +43,7 @@ export interface ChatMessage {
 }
 
 function chatKey(user: string) { return `plainws_chat_log_v2_${user}`; }
+function receiptsKey(user: string) { return `plainws_receipts_v1_${user}`; }
 export function dmKey(other: string) { return `dm:${other}`; }
 
 interface ChatState {
@@ -98,14 +99,19 @@ export const useChat = create<ChatState>((set, get) => ({
   loadFromStorage: async (myUser) => {
     try {
       const raw = await sget(chatKey(myUser));
-      if (!raw) return;
-      const arr: ChatMessage[] = JSON.parse(raw);
-      const rooms: Record<string, ChatMessage[]> = {};
-      for (const m of arr) {
-        const key = dmKey(m.from === myUser ? m.to : m.from);
-        (rooms[key] ||= []).push(m);
+      if (raw) {
+        const arr: ChatMessage[] = JSON.parse(raw);
+        const rooms: Record<string, ChatMessage[]> = {};
+        for (const m of arr) {
+          const key = dmKey(m.from === myUser ? m.to : m.from);
+          (rooms[key] ||= []).push(m);
+        }
+        set({ rooms });
       }
-      set({ rooms });
+    } catch {}
+    try {
+      const raw = await sget(receiptsKey(myUser));
+      if (raw) set({ readReceipts: JSON.parse(raw) });
     } catch {}
   },
 
@@ -120,6 +126,9 @@ export const useChat = create<ChatState>((set, get) => ({
         const cur = next[id] || [];
         if (!cur.includes(by)) next[id] = [...cur, by];
       }
+      // 읽음 상태도 저장 — 앱 재실행해도 "1" 이 다시 살아나지 않게.
+      const me = useAuth.getState().user;
+      if (me) sset(receiptsKey(me), JSON.stringify(next));
       return { readReceipts: next };
     });
   },
