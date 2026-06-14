@@ -44,6 +44,10 @@ export function ChatRoom() {
     ? (group ? getGroupMessages(group.gid, rooms) : [])
     : (other ? getDmMessages(me, other, rooms) : []);
 
+  // 각 사용자가 이 방에서 마지막으로 발화한 시각 — "1" 휴리스틱(나중에 말한 사람=읽음)용.
+  const lastTsByUser: Record<string, number> = {};
+  for (const m of msgs) if (m.ts > (lastTsByUser[m.from] || 0)) lastTsByUser[m.from] = m.ts;
+
   const [text, setText] = useState('');
   const [uploading, setUploading] = useState(false);
   const [translateOn, setTranslateOn] = useState(false);
@@ -197,7 +201,7 @@ export function ChatRoom() {
           const mine = m.from === me;
           const prev = msgs[i - 1];
           const showSender = isGroup && !mine && (!prev || prev.from !== m.from);
-          const unread = mine ? unreadIndicatorFor(m, me, group, readReceipts) : 0;
+          const unread = mine ? unreadIndicatorFor(m, me, group, readReceipts, lastTsByUser) : 0;
           return (
             <Bubble
               key={m.id}

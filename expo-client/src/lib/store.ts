@@ -158,10 +158,15 @@ export function getDmMessages(other: string, rooms: Record<string, ChatMessage[]
   return rooms[dmKey(other)] || [];
 }
 
-// 본인이 보낸 1:1 메시지의 "안읽음" 표기: 상대가 읽었으면 0, 아니면 1
+// 본인이 보낸 1:1 메시지의 "안읽음" 표기: 상대가 읽었으면 0, 아니면 1.
+// 읽음 = read receipt 받음 OR 상대가 내 메시지보다 나중에 발화함(카톡식 휴리스틱) —
+// 후자가 옛 기록에서 receipt 없이 남은 "1" 을 자연히 지운다.
 export function unreadIndicatorFor(
   msg: ChatMessage, me: string, readReceipts: Record<string, string[]>,
+  lastTsByUser: Record<string, number> = {},
 ): number {
   if (msg.from !== me) return 0;
-  return (readReceipts[msg.id] || []).includes(msg.to) ? 0 : 1;
+  const readers = readReceipts[msg.id] || [];
+  if (readers.includes(msg.to) || (lastTsByUser[msg.to] || 0) > msg.ts) return 0;
+  return 1;
 }

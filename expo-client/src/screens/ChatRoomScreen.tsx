@@ -110,6 +110,10 @@ export default function ChatRoomScreen({ route, navigation }: Props) {
 
   const typingUsers = (typing[dmKey(other)] || []).filter((u) => u !== me);
 
+  // 각 사용자가 이 방에서 마지막으로 발화한 시각 — "1" 휴리스틱(나중에 말한 사람=읽음)용.
+  const lastTsByUser: Record<string, number> = {};
+  for (const m of msgs) if (m.ts > (lastTsByUser[m.from] || 0)) lastTsByUser[m.from] = m.ts;
+
   return (
     <KeyboardAvoidingView
       style={styles.root}
@@ -142,7 +146,7 @@ export default function ChatRoomScreen({ route, navigation }: Props) {
           <Bubble
             msg={item}
             mine={item.from === me}
-            unread={unreadIndicatorFor(item, me, readReceipts)}
+            unread={unreadIndicatorFor(item, me, readReceipts, lastTsByUser)}
             translateOn={translateOn}
           />
         )}
