@@ -9,11 +9,18 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { SPRING_BASE } from './config';
-import { getToken } from './api';
+import { getToken, getTokenSync } from './api';
 
-/** 파일 id 로 수신자 기준 절대 URL 구성 (발신자 url 무시 — 웹/앱 호환). */
+/** 파일 id 로 수신자 기준 절대 URL 구성 (발신자 url 무시 — 웹/앱 호환). 토큰 없음(메시지 저장/전송용). */
 export function fileUrl(id: string): string {
   return `${SPRING_BASE}/files/${id}`;
+}
+
+/** 다운로드/표시용 URL — 렌더 시점에 내 토큰을 ?token= 으로 부착(다운로드도 인증 필요). */
+export function fileSrcUrl(id: string): string {
+  const t = getTokenSync();
+  const base = fileUrl(id);
+  return t ? `${base}?token=${encodeURIComponent(t)}` : base;
 }
 
 export interface FileMeta {

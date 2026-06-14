@@ -13,7 +13,7 @@ import {
   sendTypingDM, sendTypingGroup,
   sendFileMessage,
 } from '../lib/ws';
-import { uploadFile } from '../lib/files';
+import { uploadFile, authedUrl } from '../lib/files';
 import { translate, LANGS } from '../lib/translate';
 import { Avatar } from '../components/Avatar';
 
@@ -334,14 +334,15 @@ function Bubble({
 function BubbleContent({ msg }: { msg: ChatMessage }) {
   if (msg.file) {
     const isImg = msg.file.mime.startsWith('image/');
+    const src = authedUrl(msg.file.url);   // 렌더 시점에 내 토큰을 ?token= 으로 부착
     return (
       <div>
         {isImg ? (
-          <a href={msg.file.url} target="_blank" rel="noreferrer">
-            <img src={msg.file.url} alt={msg.file.name} className="max-w-[200px] max-h-[200px] rounded-lg" />
+          <a href={src} target="_blank" rel="noreferrer">
+            <img src={src} alt={msg.file.name} className="max-w-[200px] max-h-[200px] rounded-lg" />
           </a>
         ) : (
-          <a href={msg.file.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 underline">
+          <a href={src} target="_blank" rel="noreferrer" className="flex items-center gap-2 underline">
             <span className="text-xl">📎</span>
             <span className="break-all">{msg.file.name}</span>
           </a>

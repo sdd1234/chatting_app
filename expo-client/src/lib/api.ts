@@ -15,8 +15,18 @@ export interface AuthData {
   expiresInMs?: number;
 }
 
+// 토큰 메모리 캐시 — SecureStore 는 async 라, 렌더 같은 동기 컨텍스트(파일 다운로드 URL 구성)용.
+let cachedToken: string | null = null;
+
 export async function getToken(): Promise<string | null> {
-  return secureGet(TOKEN_KEY);
+  const t = await secureGet(TOKEN_KEY);
+  cachedToken = t;
+  return t;
+}
+
+/** 동기 컨텍스트용 — 마지막으로 읽히거나 저장된 토큰. getToken/login/refresh 가 한 번이라도 돌면 채워진다. */
+export function getTokenSync(): string | null {
+  return cachedToken;
 }
 export async function getUser(): Promise<string | null> {
   return get(USER_KEY);
@@ -35,6 +45,7 @@ export async function getOrCreateDeviceId(): Promise<string> {
 }
 
 async function persist(data: AuthData) {
+  cachedToken = data.token;
   await secureSet(TOKEN_KEY, data.token);
   await set(USER_KEY, data.user);
   await set(ROLE_KEY, data.role);
@@ -87,6 +98,7 @@ export async function refresh(): Promise<AuthData> {
 }
 
 export async function logout(): Promise<void> {
+  cachedToken = null;
   await secureDel(TOKEN_KEY);
   await del(USER_KEY);
   await del(ROLE_KEY);

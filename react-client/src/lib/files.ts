@@ -2,9 +2,20 @@
 // expo ↔ 웹 사용자가 주고받은 파일 메시지를 서로 디코드 가능.
 //
 // - 업로드: Spring /files/upload (multipart) → { id, name, mime, size }
-// - 표시: GET /files/{id} (공개) — <img> 또는 다운로드 링크
+// - 표시: GET /files/{id}?token=<JWT> — <img> 또는 다운로드 링크 (다운로드도 인증 필요)
 // - 채팅 전송: 파일 메타를 메시지 body 에 control-char prefix 로 인코딩(group/sys 와 같은 컨벤션)
 import { getToken } from './api';
+
+/**
+ * 다운로드 URL 에 내 JWT 를 ?token= 으로 붙인다.
+ * 메시지에 저장/전송되는 file.url 은 토큰 없이 두고(토큰은 상대에게 새면 안 되고 곧 만료됨),
+ * 렌더 시점에만 각자 자기 토큰을 붙여 <img>/<a> 로 다운로드한다.
+ */
+export function authedUrl(url: string): string {
+  const t = getToken();
+  if (!t) return url;
+  return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(t);
+}
 
 export interface FileMeta {
   id: string;

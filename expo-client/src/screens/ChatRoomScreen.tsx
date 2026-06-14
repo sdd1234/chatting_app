@@ -9,7 +9,7 @@ import type { RootStackParamList } from '../nav/types';
 import { useAuth, useChat, dmKey, unreadIndicatorFor } from '../lib/store';
 import type { ChatMessage } from '../lib/store';
 import { sendMessage, sendFileMessage, sendReadDM, sendTypingDM } from '../lib/ws';
-import { pickDocument, pickImage, uploadFile, fileUrl } from '../lib/files';
+import { pickDocument, pickImage, uploadFile, fileSrcUrl } from '../lib/files';
 import { translate } from '../lib/translate';
 import { useSettings } from '../lib/settings';
 import { Avatar } from '../components/Avatar';
@@ -208,8 +208,8 @@ function Bubble({ msg, mine, unread, translateOn }: { msg: ChatMessage; mine: bo
 
 function BubbleBody({ msg }: { msg: ChatMessage }) {
   if (msg.file) {
-    // 수신자 기준 절대 URL 로 재구성(발신자 url 이 웹 상대경로일 수 있음)
-    const url = fileUrl(msg.file.id);
+    // 수신자 기준 절대 URL 로 재구성(발신자 url 이 웹 상대경로일 수 있음) + 내 토큰 부착(다운로드 인증)
+    const url = fileSrcUrl(msg.file.id);
     const isImg = msg.file.mime.startsWith('image/');
     return (
       <View>
