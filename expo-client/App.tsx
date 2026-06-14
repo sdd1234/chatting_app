@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { RootStackParamList, TabParamList } from './src/nav/types';
 import { useAuth, hydrateAuth, useChat } from './src/lib/store';
 import { hydrateSettings } from './src/lib/settings';
+import { hydrateHost } from './src/lib/config';
 import { connectWS, disconnectWS } from './src/lib/ws';
 import { startAutoRefresh, stopAutoRefresh } from './src/lib/refresh';
 
@@ -58,7 +59,7 @@ export default function App() {
   // 부팅: 저장소에서 인증/설정 복원
   useEffect(() => {
     (async () => {
-      await Promise.all([hydrateAuth(), hydrateSettings()]);
+      await Promise.all([hydrateHost(), hydrateAuth(), hydrateSettings()]);
       setBooting(false);
     })();
   }, []);

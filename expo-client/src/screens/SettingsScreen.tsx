@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../nav/types';
 import { useAuth } from '../lib/store';
@@ -6,8 +7,8 @@ import { useSettings } from '../lib/settings';
 import { LANGS } from '../lib/translate';
 import { logout } from '../lib/api';
 import { stopAutoRefresh } from '../lib/refresh';
-import { disconnectWS } from '../lib/ws';
-import { HOST, SPRING_BASE, WS_URL } from '../lib/config';
+import { disconnectWS, connectWS } from '../lib/ws';
+import { getHost, setHost, springBase, wsUrl } from '../lib/config';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -17,12 +18,20 @@ export default function SettingsScreen(_props: Props) {
   const clear = useAuth((s) => s.clear);
   const lang = useSettings((s) => s.lang);
   const setLang = useSettings((s) => s.setLang);
+  const [server, setServer] = useState(getHost());
 
   async function onLogout() {
     stopAutoRefresh();
     disconnectWS();
     await logout();
     clear(); // → 인증 상태 해제 → 자동으로 Login 으로 전환
+  }
+
+  // 서버 IP 변경 + WS 재접속(로그인 유지한 채 새 서버로).
+  async function onSaveServer() {
+    await setHost(server.trim());
+    if (me) { disconnectWS(); connectWS(me); }
+    Alert.alert('서버 변경', `서버 주소를 ${server.trim()} 로 바꿨습니다.`);
   }
 
   return (
@@ -43,11 +52,21 @@ export default function SettingsScreen(_props: Props) {
         ))}
       </View>
 
-      <Text style={styles.sectionTitle}>연결 정보</Text>
+      <Text style={styles.sectionTitle}>서버 주소 (와이파이 바뀌면 PC 의 새 LAN IP 로)</Text>
       <View style={styles.card}>
-        <Text style={styles.info}>HOST: {HOST}</Text>
-        <Text style={styles.info}>Spring: {SPRING_BASE}</Text>
-        <Text style={styles.info}>plain-ws: {WS_URL}</Text>
+        <View style={styles.serverRow}>
+          <TextInput
+            style={styles.serverInput}
+            placeholder="예: 192.168.0.9" placeholderTextColor="#bbb"
+            autoCapitalize="none" autoCorrect={false}
+            value={server} onChangeText={setServer} onSubmitEditing={onSaveServer}
+          />
+          <TouchableOpacity style={styles.serverSave} onPress={onSaveServer}>
+            <Text style={styles.serverSaveText}>저장+재접속</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.info}>Spring: {springBase()}</Text>
+        <Text style={styles.info}>plain-ws: {wsUrl()}</Text>
       </View>
 
       <TouchableOpacity style={styles.logout} onPress={onLogout}>
@@ -70,6 +89,10 @@ const styles = StyleSheet.create({
   langLabel: { fontSize: 16, color: '#191919' },
   check: { fontSize: 18, color: '#0a7', fontWeight: '700' },
   info: { fontSize: 13, color: '#666', paddingHorizontal: 16, paddingVertical: 6 },
+  serverRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 8, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
+  serverInput: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: '#191919' },
+  serverSave: { backgroundColor: '#FEE500', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
+  serverSaveText: { fontSize: 13, fontWeight: '700', color: '#191919' },
   logout: { margin: 16, padding: 14, alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#ffd0d0' },
   logoutText: { color: '#ff3b30', fontSize: 16, fontWeight: '600' },
 });

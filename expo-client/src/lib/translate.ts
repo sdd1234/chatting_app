@@ -2,7 +2,7 @@
 // 1주차 요구사항 "번역 기능" 의 모바일 포팅.
 //
 // ⚠️ Spring 측 /translate 컨트롤러는 아직 미구현(남은 작업). 클라 경로만 준비.
-import { SPRING_BASE } from './config';
+import { springBase } from './config';
 import { getToken } from './api';
 
 export const LANGS: { code: string; label: string }[] = [
@@ -22,7 +22,7 @@ export async function translate(text: string, target: string): Promise<string> {
   if (hit != null) return hit;
 
   const token = await getToken();
-  const r = await fetch(`${SPRING_BASE}/translate`, {
+  const r = await fetch(`${springBase()}/translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
     body: JSON.stringify({ text, target }),

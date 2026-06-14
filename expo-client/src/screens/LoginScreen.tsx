@@ -6,6 +6,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../nav/types';
 import { login } from '../lib/api';
 import { useAuth } from '../lib/store';
+import { getHost, setHost } from '../lib/config';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -14,6 +15,14 @@ export default function LoginScreen({ navigation }: Props) {
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const setAuth = useAuth((s) => s.setAuth);
+  const [server, setServer] = useState(getHost());
+  const [showServer, setShowServer] = useState(false);
+
+  async function saveServer() {
+    await setHost(server);
+    setShowServer(false);
+    Alert.alert('서버 설정', `서버 주소를 ${server} 로 저장했습니다.\n로그인하면 적용됩니다.`);
+  }
 
   async function onLogin() {
     if (!user || !pw) { Alert.alert('입력', '아이디와 비밀번호를 입력하세요'); return; }
@@ -57,6 +66,24 @@ export default function LoginScreen({ navigation }: Props) {
       <Text style={styles.demo}>
         시연 계정: admin/admin123 · jihoon/jihoon123{'\n'}emma/emma123 · minho/minho123
       </Text>
+
+      {/* 서버 IP — 와이파이 바뀌면 PC 의 새 LAN IP 로 변경(재빌드 불필요) */}
+      <TouchableOpacity onPress={() => setShowServer((v) => !v)}>
+        <Text style={styles.serverToggle}>⚙ 서버 {getHost()} {showServer ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+      {showServer && (
+        <View style={styles.serverBox}>
+          <TextInput
+            style={styles.serverInput}
+            placeholder="예: 192.168.0.9" placeholderTextColor="#bbb"
+            autoCapitalize="none" autoCorrect={false}
+            value={server} onChangeText={setServer} onSubmitEditing={saveServer}
+          />
+          <TouchableOpacity style={styles.serverSave} onPress={saveServer}>
+            <Text style={styles.serverSaveText}>저장</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -79,4 +106,9 @@ const styles = StyleSheet.create({
   signupText: { fontSize: 14, color: '#555' },
   signupLink: { fontSize: 14, color: '#caa400', fontWeight: '700' },
   demo: { marginTop: 16, fontSize: 11, color: '#bbb', textAlign: 'center', lineHeight: 18 },
+  serverToggle: { marginTop: 22, fontSize: 12, color: '#aaa', textAlign: 'center' },
+  serverBox: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 },
+  serverInput: { flex: 1, borderBottomWidth: 1, borderBottomColor: '#ddd', paddingVertical: 8, fontSize: 14, color: '#191919' },
+  serverSave: { backgroundColor: '#eee', borderRadius: 6, paddingHorizontal: 14, paddingVertical: 8 },
+  serverSaveText: { fontSize: 13, fontWeight: '700', color: '#333' },
 });

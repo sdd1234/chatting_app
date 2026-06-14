@@ -8,12 +8,12 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
-import { SPRING_BASE } from './config';
+import { springBase } from './config';
 import { getToken, getTokenSync } from './api';
 
 /** 파일 id 로 수신자 기준 절대 URL 구성 (발신자 url 무시 — 웹/앱 호환). 토큰 없음(메시지 저장/전송용). */
 export function fileUrl(id: string): string {
-  return `${SPRING_BASE}/files/${id}`;
+  return `${springBase()}/files/${id}`;
 }
 
 /** 다운로드/표시용 URL — 렌더 시점에 내 토큰을 ?token= 으로 부착(다운로드도 인증 필요). */
@@ -76,7 +76,7 @@ export async function pickImage(): Promise<LocalPick | null> {
  *  expo-file-system 의 uploadAsync(MULTIPART) 로 네이티브 업로드한다. */
 export async function uploadFile(pick: LocalPick): Promise<FileMeta> {
   const token = await getToken();
-  const res = await uploadAsync(`${SPRING_BASE}/files/upload`, pick.uri, {
+  const res = await uploadAsync(`${springBase()}/files/upload`, pick.uri, {
     httpMethod: 'POST',
     uploadType: FileSystemUploadType.MULTIPART,
     fieldName: 'file',

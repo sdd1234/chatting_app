@@ -1,6 +1,6 @@
 // plain-ws(:8090) 연결 싱글톤. 로그인 후 1회 연결, 전 화면이 공유.
 // RN 의 전역 WebSocket 사용. config.WS_URL 로 절대 주소 접속.
-import { WS_URL } from './config';
+import { wsUrl } from './config';
 import { getOrCreateDeviceId, getToken } from './api';
 import { useChat, dmKey } from './store';
 import type { ChatMessage } from './store';
@@ -36,7 +36,7 @@ export async function connectWS(myUser: string) {
   const token = await getToken();
   if (!token) return;
   const deviceId = await getOrCreateDeviceId();
-  ws = new WebSocket(WS_URL);
+  ws = new WebSocket(wsUrl());
 
   ws.onopen = () => {
     ws!.send(JSON.stringify({ type: 'hello', token, deviceId, deviceType: 'mobile' }));

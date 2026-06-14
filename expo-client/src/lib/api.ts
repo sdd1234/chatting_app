@@ -1,6 +1,6 @@
 // Spring(:8081) + plain-ws 인증 호출. RN 이라 절대 URL + 전부 async 저장.
 // 슬롯 격리(멀티 인스턴스)는 RN 에 없으므로 단일 키만 쓴다.
-import { SPRING_BASE } from './config';
+import { springBase } from './config';
 import { get, set, del, secureGet, secureSet, secureDel } from './storage';
 
 export const TOKEN_KEY = 'plainws_jwt_v1';
@@ -52,7 +52,7 @@ async function persist(data: AuthData) {
 }
 
 export async function login(user: string, password: string): Promise<AuthData> {
-  const r = await fetch(`${SPRING_BASE}/auth/login`, {
+  const r = await fetch(`${springBase()}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user, password }),
@@ -64,7 +64,7 @@ export async function login(user: string, password: string): Promise<AuthData> {
 }
 
 export async function register(user: string, password: string): Promise<AuthData> {
-  const r = await fetch(`${SPRING_BASE}/auth/register`, {
+  const r = await fetch(`${springBase()}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user, password }),
@@ -84,7 +84,7 @@ export async function register(user: string, password: string): Promise<AuthData
 export async function refresh(): Promise<AuthData> {
   const old = await getToken();
   if (!old) throw new Error('no token');
-  const r = await fetch(`${SPRING_BASE}/auth/refresh`, {
+  const r = await fetch(`${springBase()}/auth/refresh`, {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + old },
   });
@@ -108,7 +108,7 @@ export async function logout(): Promise<void> {
 /** 친구 목록 = Mongoose 등록 사용자. /users 는 일반 user 도 허용(role 무관). */
 export async function fetchUsers(): Promise<string[]> {
   const token = await getToken();
-  const r = await fetch(`${SPRING_BASE}/users`, {
+  const r = await fetch(`${springBase()}/users`, {
     headers: { Authorization: 'Bearer ' + token },
   });
   if (!r.ok) return [];
