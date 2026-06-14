@@ -332,26 +332,20 @@ function Bubble({
 
 /** 버블 내용 — 파일/이미지면 첨부 렌더, 아니면 텍스트. */
 function BubbleContent({ msg }: { msg: ChatMessage }) {
+  const [zoom, setZoom] = useState(false);
   if (msg.file) {
     const isImg = msg.file.mime.startsWith('image/');
-    const src = authedUrl(msg.file.url);   // 렌더 시점에 내 토큰을 ?token= 으로 부착(미리보기/열기)
+    const src = authedUrl(msg.file.url);   // 렌더 시점에 내 토큰을 ?token= 으로 부착(미리보기)
     const dlSrc = src + '&dl=1';           // 다운로드 강제(attachment)
     return (
       <div>
         {isImg ? (
-          <div className="relative inline-block">
-            <a href={src} target="_blank" rel="noreferrer">
-              <img src={src} alt={msg.file.name} className="max-w-[200px] max-h-[200px] rounded-lg" />
-            </a>
-            <a
-              href={dlSrc}
-              download={msg.file.name}
-              className="absolute bottom-1 right-1 bg-black/55 text-white text-[11px] px-2 py-0.5 rounded-full hover:bg-black/75"
-              title="이미지 저장"
-            >
-              ⬇ 저장
-            </a>
-          </div>
+          <img
+            src={src}
+            alt={msg.file.name}
+            onClick={() => setZoom(true)}
+            className="max-w-[200px] max-h-[200px] rounded-lg cursor-zoom-in"
+          />
         ) : (
           <a href={dlSrc} download={msg.file.name} className="flex items-center gap-2 underline">
             <span className="text-xl">📎</span>
@@ -360,6 +354,36 @@ function BubbleContent({ msg }: { msg: ChatMessage }) {
           </a>
         )}
         {msg.body && <div className="mt-1">{msg.body}</div>}
+
+        {/* 탭하면 확대 → 확대창에서 저장 */}
+        {zoom && isImg && (
+          <div
+            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
+            onClick={() => setZoom(false)}
+          >
+            <img
+              src={src}
+              alt={msg.file.name}
+              className="max-w-[92vw] max-h-[82vh] object-contain rounded"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <a
+              href={dlSrc}
+              download={msg.file.name}
+              onClick={(e) => e.stopPropagation()}
+              className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/90 text-black text-sm font-semibold px-6 py-2 rounded-full shadow"
+            >
+              ⬇ 저장
+            </a>
+            <button
+              onClick={() => setZoom(false)}
+              className="absolute top-4 right-5 text-white text-3xl leading-none"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+          </div>
+        )}
       </div>
     );
   }

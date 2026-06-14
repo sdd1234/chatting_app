@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
-  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Animated, Image, Linking,
+  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Animated, Image, Linking, Modal,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -223,6 +223,7 @@ function Bubble({ msg, mine, unread, translateOn }: { msg: ChatMessage; mine: bo
 }
 
 function BubbleBody({ msg }: { msg: ChatMessage }) {
+  const [zoom, setZoom] = useState(false);
   if (msg.file) {
     // 수신자 기준 절대 URL 로 재구성(발신자 url 이 웹 상대경로일 수 있음) + 내 토큰 부착(다운로드 인증)
     const url = fileSrcUrl(msg.file.id);
@@ -232,18 +233,30 @@ function BubbleBody({ msg }: { msg: ChatMessage }) {
     return (
       <View>
         {isImg ? (
-          <View>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => setZoom(true)}>
             <Image source={{ uri: url }} style={styles.imgAttach} resizeMode="cover" />
-            <TouchableOpacity style={styles.saveBtn} onPress={onSave}>
-              <Text style={styles.saveBtnText}>⬇ 저장</Text>
-            </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         ) : (
           <TouchableOpacity onPress={onSave}>
             <Text style={styles.bubbleText}>📎 {msg.file.name}  ⬇</Text>
           </TouchableOpacity>
         )}
         {!!msg.body && <Text style={[styles.bubbleText, { marginTop: 4 }]}>{msg.body}</Text>}
+
+        {/* 탭하면 확대 → 확대창에서 저장 */}
+        {isImg && (
+          <Modal visible={zoom} transparent animationType="fade" onRequestClose={() => setZoom(false)}>
+            <View style={styles.viewerBg}>
+              <TouchableOpacity style={styles.viewerClose} onPress={() => setZoom(false)}>
+                <Text style={styles.viewerCloseText}>✕</Text>
+              </TouchableOpacity>
+              <Image source={{ uri: url }} style={styles.viewerImg} resizeMode="contain" />
+              <TouchableOpacity style={styles.viewerSave} onPress={onSave}>
+                <Text style={styles.viewerSaveText}>⬇ 저장</Text>
+              </TouchableOpacity>
+            </View>
+          </Modal>
+        )}
       </View>
     );
   }
@@ -291,8 +304,12 @@ const styles = StyleSheet.create({
   bubbleTheir: { backgroundColor: '#fff', borderTopLeftRadius: 4 },
   bubbleText: { fontSize: 15, color: '#191919' },
   imgAttach: { width: 180, height: 180, borderRadius: 10, backgroundColor: '#eee' },
-  saveBtn: { position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 3 },
-  saveBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  viewerBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', alignItems: 'center', justifyContent: 'center' },
+  viewerImg: { width: '92%', height: '70%' },
+  viewerClose: { position: 'absolute', top: 44, right: 22, zIndex: 2, padding: 8 },
+  viewerCloseText: { color: '#fff', fontSize: 26, fontWeight: '700' },
+  viewerSave: { position: 'absolute', bottom: 48, alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 24, paddingHorizontal: 26, paddingVertical: 11 },
+  viewerSaveText: { color: '#191919', fontSize: 15, fontWeight: '700' },
   langBar: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#dCE6F0', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#b0c4de' },
   langBarLabel: { fontSize: 11, color: '#5a6b7a', fontWeight: '700' },
   langChip: { backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#cdd9e5' },
