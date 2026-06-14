@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 사용자 인증 — Mongoose GraphQL 위임.
+ * 사용자 비밀번호(계정) 검증 — Mongoose GraphQL 위임. (JWT 발급/검증은 Spring·plain-ws 자체, Mongoose 무관)
  *
  *   verify(user, password) → Mongoose :5551 account.checkPassword 호출.
  *   roleOf(user)           → Redis Hash auth:user:{user} 의 role 필드 (Mongoose는 role 개념 없음).

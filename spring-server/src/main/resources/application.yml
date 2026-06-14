@@ -46,7 +46,7 @@ auth:
 notice:
   channel: notice.broadcast
 
-# MongooseIM GraphQL Admin 프록시 + 로그인 위임
+# MongooseIM GraphQL Admin 프록시 + 비밀번호 검증 위임(로그인 시 checkPassword). JWT 는 Spring 자체 발급
 mongooseim:
   graphql:
     url:  ${MONGOOSE_GRAPHQL_URL:http://xmpp-server:5551/api/graphql}

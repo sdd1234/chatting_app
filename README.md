@@ -73,7 +73,7 @@ npx expo start   # QR → Expo Go(실기기) 또는 a/i(에뮬레이터)
      ▼                  ▼
 ┌─────────────────┐  ┌──────────────┐
 │ MongooseIM :5551│  │ Redis :6379  │
-│ (인증/저장 위임) │  │ 세션/inbox    │
+│ (비번/저장 위임) │  │ 세션/inbox    │
 └─────────────────┘  └──────┬───────┘
                             │
        ┌────────────────────┘
@@ -89,7 +89,7 @@ npx expo start   # QR → Expo Go(실기기) 또는 a/i(에뮬레이터)
 **책임 분담**
 | 서비스 | 담당 |
 |---|---|
-| MongooseIM | 인증 위임(`checkPassword`) · 회원가입(`registerUser`) · 메시지 영구 저장(mod_mam). **채팅 라우팅은 안 함** |
+| MongooseIM | **비밀번호(계정) 검증** 위임(`checkPassword`) · 회원가입(`registerUser`) · 메시지 영구 저장(mod_mam). **JWT 는 안 다룸 · 채팅 라우팅 안 함** |
 | Spring Boot | 로그인 / JWT / 회원가입 API / 공지 push / Mongoose GraphQL 프록시 |
 | plain-ws | 실시간 채팅 라우팅 (JWT 검증, 디바이스 묶음 세션, fanout) |
 | React | 카톡 UI, 단톡, 읽음/타이핑, 자동 슬롯 분배, JWT 자동 리프레시 |
@@ -110,7 +110,7 @@ MongooseIM/
 │   └── src/main/
 │       ├── java/com/example/notice/
 │       │   ├── AuthController.java         # /auth/login /register /refresh /verify
-│       │   ├── UserService.java            # Mongoose에 인증/가입 위임
+│       │   ├── UserService.java            # Mongoose에 비번검증/가입 위임 (JWT 아님)
 │       │   ├── JwtUtil.java                # HS256 발급/검증
 │       │   ├── MongooseGraphqlController.java # Mongoose 프록시 (admin)
 │       │   ├── UserDirectoryController.java # /users (일반 user 친구목록)
