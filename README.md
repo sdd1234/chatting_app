@@ -200,7 +200,7 @@ MongooseIM/
 
 ### ✅ 클라이언트
 - [x] **웹** (react-client) — React 18 + Vite, 카톡 UI, 자동 슬롯 분배
-- [x] **모바일** (expo-client) — React Native + Expo SDK 56, 동일 기능 포팅 (단톡/읽음/타이핑은 추후)
+- [x] **모바일** (expo-client) — React Native + Expo SDK 56, 동일 기능 포팅 + **하단 탭(친구/채팅)·읽음·타이핑** 반영 (단톡은 추후), EAS preview(apk) 빌드
 
 ### ✅ 시연 편의
 - [x] **자동 슬롯 분배** — 한 PC에서 새 탭 열기만 하면 자동으로 다른 디바이스로 격리
@@ -228,6 +228,7 @@ MongooseIM/
 | **4주차** | 세션 Redis 분리 (디바이스 묶음), Raids 테이블, Spring 도커화, GraphQL 패킷 분석 | ✅ |
 | **5주차** | **Spring Boot + React 프레임워크 통합** (이번 산출물) | ✅ |
 | **6주차** | ① 메시지 송신 시 토큰 만료 검증 = plain-ws 자체 (③안)<br>② React → React Native **Expo CLI** 전환 (RN CLI 금지) + 파일첨부·번역 | ① ✅ / ② ✅ (실폰 구동만 남음) |
+| **7주차** | ① JWT 인증 구조 점검 (Spring↔plain-ws 알고리즘 일치 / MongooseIM 인증 커스텀 가능성)<br>② 기능 모듈별 구조 정리 (채팅·파일·번역·주소록)<br>③ 파일 전송 플로우 점검 (업로드→URL 전송→다운로드) | ✅ 점검·문서화 |
 
 자세한 미팅 결정사항: 위 표의 6주차 항목 참조
 
@@ -304,6 +305,66 @@ authRefresh(token) ──▶ plain-ws: 새 토큰 검증 + sub 일치 확인 →
 
 ---
 
+## 7주차 — JWT 인증 구조 점검 · 모듈별 구조 · 파일 전송 플로우
+
+미팅 요구사항 3건을 코드 기준으로 점검하고 문서화했다.
+
+### ① JWT 해시 알고리즘 — 누가 발급하고 누가 검증하나
+
+먼저 전제를 바로잡자: **MongooseIM 은 JWT 를 쓰지 않는다.** JWT 는 Spring ↔ plain-ws 사이의 약속이고,
+MongooseIM 은 비밀번호(SCRAM/PLAIN, 내장 DB)만 본다. 그래서 "JWT 알고리즘이 Spring 과 MongooseIM 이
+일치하느냐"가 아니라, **"발급처(Spring)와 검증처(plain-ws)의 알고리즘·시크릿이 같으냐"** 가 정확한 질문이다.
+
+| 주체 | JWT 역할 | 알고리즘 / 시크릿 | 근거 |
+|---|---|---|---|
+| **Spring Boot** | **발급** (로그인 성공 후) | HS256, `JWT_SECRET` | `JwtUtil.java:40` (`signWith(key)`), `application.yml:25-27` |
+| **plain-ws** | **검증** (hello + 매 msg) | HS256, **같은** `JWT_SECRET` | `server.js:380 · 459` (`jwt.verify(t, JWT_SECRET, {algorithms:['HS256']})`) |
+| **MongooseIM** | JWT 와 **무관** — 내장 DB 로 비번만 검증 | `[auth.internal]` (SCRAM/PLAIN) | `config/mongooseim.toml:132` |
+
+- **(a) 알고리즘 일치?** ✅ Spring·plain-ws 모두 **HS256 + 동일 `JWT_SECRET`**(`docker-compose.yml` 에서 두 서비스에 같은 값 주입, 기본 `demo-secret-…-xx`). 그래서 plain-ws 가 외부 왕복 없이 자체 `jwt.verify` 로 검증 가능 — 6주차 ③안의 전제가 바로 이것.
+- **(b) Spring 자체 발급으로 가능?** ✅ 가능, 현재 그렇게 운용. 발급은 Spring 한 곳, 검증은 plain-ws 한 곳. MongooseIM 은 발급/검증 어디에도 끼지 않는다.
+- **(c) MongooseIM 인증 로직 커스텀 가능?** ✅ 가능(현재 미사용). 지금은 `[auth.internal]`(Mnesia). MongooseIM 은 `[auth.external]`(외부 HTTP/스크립트 위임)·`[auth.rdbms]`·`[auth.ldap]` 로 교체 가능하므로, 원하면 external auth 로 "Spring/JWT 검증을 MongooseIM 에 물리는" 구성도 가능하다. 다만 현재 분담(채팅은 MongooseIM 미경유)에선 불필요.
+
+> 한 줄 요약: **Spring(발급) ↔ plain-ws(검증) 은 HS256·동일 시크릿으로 완전 일치**하고, **MongooseIM 은 JWT 가 아니라 비밀번호(`checkPassword`)만** 담당한다.
+
+### ② 모듈별 구조 (채팅 · 파일 · 번역 · 주소록)
+
+기존 "폴더 구조"가 디렉토리 기준이라, 같은 코드를 **기능 모듈 관점**으로 다시 묶었다.
+
+| 모듈 | spring-server | plain-ws | react-client | expo-client |
+|---|---|---|---|---|
+| **채팅** | — (라우팅 안 함) | `server.js` (hello/msg/inbox 라우팅 + Mongoose 미러링) | `lib/ws.ts`, `lib/store.ts`, `pages/ChatRoom.tsx` | `lib/ws.ts`, `lib/store.ts`, `screens/ChatRoomScreen.tsx` |
+| **파일** | `FileController.java` (업로드/다운로드, `uploads/{id}` + `.meta`) | (메타만 라우팅) | `lib/files.ts` | `lib/files.ts` |
+| **번역** | `TranslateController.java` (구글 비공식 프록시) | — | `lib/translate.ts` | `lib/translate.ts` |
+| **주소록** | `UserDirectoryController.java` (`/users`, Mongoose `listUsers`) | — | `lib/api.ts` · `pages/Friends.tsx` | `lib/api.ts` · `screens/FriendsScreen.tsx` |
+| **인증/로그인** | `AuthController`·`JwtUtil`·`UserService` (발급 + `checkPassword` 위임) | `server.js` (검증) | `lib/api.ts` · `lib/refresh.ts` | `lib/api.ts` · `lib/refresh.ts` |
+| **공지** | `NoticeWebSocketHandler`·`AdminController` (Redis pub-sub) | — | `lib/notice.ts` | (미포팅) |
+
+- **서버 무변경 핵심**: 채팅 body 를 control-char prefix 로 인코딩 — `\x01FILE\x01`(파일) · `\x01GRP\x01`(단톡) · `\x01SYS\x01`(읽음/타이핑). plain-ws 는 1:1 라우팅만 하고, 의미 해석은 클라가 한다.
+
+### ③ 파일 전송 플로우
+
+**맞다 — "Spring 에 업로드 → 받은 id/URL 만 메시지로 전송 → 수신자가 그 URL 로 다운로드" 방식이다.**
+실제 파일 바이트는 WebSocket 으로 보내지 않고, **메타데이터(id·url·name·mime)만** 채팅에 싣는다.
+
+```
+발신자                       Spring (:8081)                  plain-ws (:8090)        수신자
+  │ ① POST /files/upload ───▶ uploads/{id} 저장                  │                    │
+  │   (multipart, JWT 필수)    + {id}.meta(name/mime/owner)       │                    │
+  │ ◀── { id, name, mime } ───┘                                 │                    │
+  │ ② body = \x01FILE\x01{file:{id,url,…}} ──▶ (1:1 라우팅) ──────▶ ③ 수신·decode      │
+  │                                                             │                    │
+  │                            ④ GET /files/{id} ◀──────────────────────────── 클릭   │
+  │                            (이미지=인라인 미리보기 / 그 외=파일 링크)               │
+```
+
+- **업로드**: `POST /files/upload` 는 **JWT 필수**(`FileController.requireUser`), Spring 로컬 `uploads/` 에 저장(도커 볼륨 마운트). 응답 `{id,name,mime,size}`.
+- **전송**: 메시지엔 파일 메타만 → plain-ws 가 일반 텍스트처럼 라우팅(서버 무변경). 웹·모바일 인코딩 동일 → 교차 송수신 OK.
+- **다운로드**: 수신자가 `fileUrl(id)` = `GET /files/{id}` 로 받음.
+- ⚠️ **현재 `GET /files/{id}` 는 인증/권한 체크가 없다** (`FileController.java:93~`, id 만 알면 누구나 다운로드 · 만료 없음). 시연엔 무방하나 운영 전엔 **다운로드에도 JWT 검증 + owner/수신자 권한 체크**가 필요 → 아래 "보안 주의" 보류 목록에 반영.
+
+---
+
 ## 기술 스택
 
 | 레이어 | 기술 |
@@ -340,7 +401,7 @@ authRefresh(token) ──▶ plain-ws: 새 토큰 검증 + sub 일치 확인 →
 - 시드 계정 비번 4건 (`admin123`, `jihoon123`, `emma123`, `minho123`)
 
 → 모두 `${ENV:default}` 패턴이라 운영 전환 시 `.env` 로 빼면 됨.
-→ `bcrypt`, TLS/wss, Refresh token rotation, FCM 푸시는 미구현 (보류 목록).
+→ `bcrypt`, TLS/wss, Refresh token rotation, FCM 푸시, **파일 다운로드(`GET /files/{id}`) 인증·권한 체크**는 미구현 (보류 목록).
 
 ---
 
