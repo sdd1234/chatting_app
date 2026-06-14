@@ -48,21 +48,32 @@ export function dmKey(other: string) { return `dm:${other}`; }
 interface ChatState {
   rooms: Record<string, ChatMessage[]>;
   unreadCount: Record<string, number>;
+  readReceipts: Record<string, string[]>; // msgId → 읽은 user 목록
+  typing: Record<string, string[]>;       // roomKey → 입력중 user 목록 (자동만료)
   currentRoom: string | null;
   appendMessage: (myUser: string, msg: ChatMessage) => void;
   loadFromStorage: (myUser: string) => Promise<void>;
   openRoom: (roomKey: string) => void;
   closeRoom: () => void;
+  applyRead: (ids: string[], by: string) => void;
+  markLocalRead: (ids: string[], by: string) => void;
+  applyTyping: (roomKey: string, from: string) => void;
 }
+
+// typing 만료 타이머
+const typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const TYPING_TTL_MS = 5_000;
 
 function saveAll(myUser: string, rooms: Record<string, ChatMessage[]>) {
   const all = Object.values(rooms).flat();
   sset(chatKey(myUser), JSON.stringify(all)); // fire-and-forget
 }
 
-export const useChat = create<ChatState>((set) => ({
+export const useChat = create<ChatState>((set, get) => ({
   rooms: {},
   unreadCount: {},
+  readReceipts: {},
+  typing: {},
   currentRoom: null,
 
   appendMessage: (myUser, msg) => {
@@ -101,8 +112,47 @@ export const useChat = create<ChatState>((set) => ({
   openRoom: (roomKey) =>
     set((s) => ({ currentRoom: roomKey, unreadCount: { ...s.unreadCount, [roomKey]: 0 } })),
   closeRoom: () => set({ currentRoom: null }),
+
+  applyRead: (ids, by) => {
+    set((s) => {
+      const next: Record<string, string[]> = { ...s.readReceipts };
+      for (const id of ids) {
+        const cur = next[id] || [];
+        if (!cur.includes(by)) next[id] = [...cur, by];
+      }
+      return { readReceipts: next };
+    });
+  },
+
+  markLocalRead: (ids, by) => { get().applyRead(ids, by); },
+
+  applyTyping: (roomKey, from) => {
+    const tkey = `${roomKey} ${from}`;
+    const old = typingTimers.get(tkey);
+    if (old) clearTimeout(old);
+    set((s) => {
+      const list = s.typing[roomKey] || [];
+      if (list.includes(from)) return s;
+      return { typing: { ...s.typing, [roomKey]: [...list, from] } };
+    });
+    const t = setTimeout(() => {
+      typingTimers.delete(tkey);
+      useChat.setState((s) => ({
+        typing: { ...s.typing, [roomKey]: (s.typing[roomKey] || []).filter((u) => u !== from) },
+      }));
+    }, TYPING_TTL_MS);
+    typingTimers.set(tkey, t);
+  },
 }));
 
 export function getDmMessages(other: string, rooms: Record<string, ChatMessage[]>) {
   return rooms[dmKey(other)] || [];
+}
+
+// 본인이 보낸 1:1 메시지의 "안읽음" 표기: 상대가 읽었으면 0, 아니면 1
+export function unreadIndicatorFor(
+  msg: ChatMessage, me: string, readReceipts: Record<string, string[]>,
+): number {
+  if (msg.from !== me) return 0;
+  return (readReceipts[msg.id] || []).includes(msg.to) ? 0 : 1;
 }
