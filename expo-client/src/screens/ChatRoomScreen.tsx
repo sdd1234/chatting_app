@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
-  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Animated, Image,
+  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Animated, Image, Linking,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,8 +9,8 @@ import type { RootStackParamList } from '../nav/types';
 import { useAuth, useChat, dmKey, unreadIndicatorFor } from '../lib/store';
 import type { ChatMessage } from '../lib/store';
 import { sendMessage, sendFileMessage, sendReadDM, sendTypingDM } from '../lib/ws';
-import { pickDocument, pickImage, uploadFile, fileSrcUrl } from '../lib/files';
-import { translate } from '../lib/translate';
+import { pickDocument, pickImage, uploadFile, fileSrcUrl, fileDownloadUrl } from '../lib/files';
+import { translate, LANGS } from '../lib/translate';
 import { useSettings } from '../lib/settings';
 import { Avatar } from '../components/Avatar';
 
@@ -34,6 +34,8 @@ export default function ChatRoomScreen({ route, navigation }: Props) {
   const openRoom = useChat((s) => s.openRoom);
   const closeRoom = useChat((s) => s.closeRoom);
   const markLocalRead = useChat((s) => s.markLocalRead);
+  const lang = useSettings((s) => s.lang);
+  const setLang = useSettings((s) => s.setLang);
 
   const [text, setText] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -114,6 +116,20 @@ export default function ChatRoomScreen({ route, navigation }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={90}
     >
+      {translateOn && (
+        <View style={styles.langBar}>
+          <Text style={styles.langBarLabel}>번역 →</Text>
+          {LANGS.map((l) => (
+            <TouchableOpacity
+              key={l.code}
+              style={[styles.langChip, lang === l.code && styles.langChipOn]}
+              onPress={() => setLang(l.code)}
+            >
+              <Text style={[styles.langChipText, lang === l.code && styles.langChipTextOn]}>{l.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
       <FlatList
         ref={listRef}
         data={msgs}
@@ -210,12 +226,23 @@ function BubbleBody({ msg }: { msg: ChatMessage }) {
   if (msg.file) {
     // 수신자 기준 절대 URL 로 재구성(발신자 url 이 웹 상대경로일 수 있음) + 내 토큰 부착(다운로드 인증)
     const url = fileSrcUrl(msg.file.id);
+    const fid = msg.file.id;
     const isImg = msg.file.mime.startsWith('image/');
+    const onSave = () => Linking.openURL(fileDownloadUrl(fid)).catch(() => {});
     return (
       <View>
-        {isImg
-          ? <Image source={{ uri: url }} style={styles.imgAttach} resizeMode="cover" />
-          : <Text style={styles.bubbleText}>📎 {msg.file.name}</Text>}
+        {isImg ? (
+          <View>
+            <Image source={{ uri: url }} style={styles.imgAttach} resizeMode="cover" />
+            <TouchableOpacity style={styles.saveBtn} onPress={onSave}>
+              <Text style={styles.saveBtnText}>⬇ 저장</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={onSave}>
+            <Text style={styles.bubbleText}>📎 {msg.file.name}  ⬇</Text>
+          </TouchableOpacity>
+        )}
         {!!msg.body && <Text style={[styles.bubbleText, { marginTop: 4 }]}>{msg.body}</Text>}
       </View>
     );
@@ -264,6 +291,14 @@ const styles = StyleSheet.create({
   bubbleTheir: { backgroundColor: '#fff', borderTopLeftRadius: 4 },
   bubbleText: { fontSize: 15, color: '#191919' },
   imgAttach: { width: 180, height: 180, borderRadius: 10, backgroundColor: '#eee' },
+  saveBtn: { position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 3 },
+  saveBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  langBar: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#dCE6F0', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#b0c4de' },
+  langBarLabel: { fontSize: 11, color: '#5a6b7a', fontWeight: '700' },
+  langChip: { backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#cdd9e5' },
+  langChipOn: { backgroundColor: '#0a7', borderColor: '#0a7' },
+  langChipText: { fontSize: 12, color: '#33475b' },
+  langChipTextOn: { color: '#fff', fontWeight: '700' },
   original: { fontSize: 13, color: '#888', marginTop: 4, paddingTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.12)' },
   origToggle: { fontSize: 11, color: '#555', marginTop: 2, textDecorationLine: 'underline' },
   time: { fontSize: 10, color: '#5a6b7a', marginHorizontal: 4, marginBottom: 1 },

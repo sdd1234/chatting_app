@@ -334,17 +334,29 @@ function Bubble({
 function BubbleContent({ msg }: { msg: ChatMessage }) {
   if (msg.file) {
     const isImg = msg.file.mime.startsWith('image/');
-    const src = authedUrl(msg.file.url);   // 렌더 시점에 내 토큰을 ?token= 으로 부착
+    const src = authedUrl(msg.file.url);   // 렌더 시점에 내 토큰을 ?token= 으로 부착(미리보기/열기)
+    const dlSrc = src + '&dl=1';           // 다운로드 강제(attachment)
     return (
       <div>
         {isImg ? (
-          <a href={src} target="_blank" rel="noreferrer">
-            <img src={src} alt={msg.file.name} className="max-w-[200px] max-h-[200px] rounded-lg" />
-          </a>
+          <div className="relative inline-block">
+            <a href={src} target="_blank" rel="noreferrer">
+              <img src={src} alt={msg.file.name} className="max-w-[200px] max-h-[200px] rounded-lg" />
+            </a>
+            <a
+              href={dlSrc}
+              download={msg.file.name}
+              className="absolute bottom-1 right-1 bg-black/55 text-white text-[11px] px-2 py-0.5 rounded-full hover:bg-black/75"
+              title="이미지 저장"
+            >
+              ⬇ 저장
+            </a>
+          </div>
         ) : (
-          <a href={src} target="_blank" rel="noreferrer" className="flex items-center gap-2 underline">
+          <a href={dlSrc} download={msg.file.name} className="flex items-center gap-2 underline">
             <span className="text-xl">📎</span>
             <span className="break-all">{msg.file.name}</span>
+            <span className="text-[11px] text-gray-500">⬇</span>
           </a>
         )}
         {msg.body && <div className="mt-1">{msg.body}</div>}

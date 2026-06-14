@@ -17,6 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -97,7 +99,8 @@ public class FileController {
     public ResponseEntity<byte[]> download(
             @PathVariable String id,
             @RequestHeader(value = "Authorization", required = false) String auth,
-            @RequestParam(value = "token", required = false) String token) {
+            @RequestParam(value = "token", required = false) String token,
+            @RequestParam(value = "dl", required = false) String dl) {
         Claims c = requireUserFlexible(auth, token);   // 헤더 또는 ?token= — 둘 다 없으면 401
         if (!id.matches("[a-zA-Z0-9]+")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bad id");
@@ -120,9 +123,16 @@ public class FileController {
                     log.debug("file {} downloaded by {} (owner {})", id, c.getSubject(), owner);
                 }
             }
+            // ?dl=1 이면 attachment(브라우저 다운로드 강제), 아니면 inline(미리보기).
+            // 한글 파일명은 RFC 5987 filename* 로, 폴백은 ASCII 로 안전하게.
+            boolean attach = dl != null && !dl.isBlank();
+            String enc = URLEncoder.encode(name, StandardCharsets.UTF_8).replace("+", "%20");
+            String ascii = name.replaceAll("[^\\x20-\\x7E]", "_").replace("\"", "_");
+            String disp = (attach ? "attachment" : "inline")
+                    + "; filename=\"" + ascii + "\"; filename*=UTF-8''" + enc;
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(mime))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + name + "\"")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disp)
                     .body(bytes);
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "read failed: " + e.getMessage());

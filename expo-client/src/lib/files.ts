@@ -23,6 +23,11 @@ export function fileSrcUrl(id: string): string {
   return t ? `${base}?token=${encodeURIComponent(t)}` : base;
 }
 
+/** 저장(다운로드 강제)용 URL — ?dl=1 이면 서버가 attachment 로 내려줘 폰이 파일로 받음. */
+export function fileDownloadUrl(id: string): string {
+  return `${fileSrcUrl(id)}&dl=1`;
+}
+
 export interface FileMeta {
   id: string;
   name: string;
