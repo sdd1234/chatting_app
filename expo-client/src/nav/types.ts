@@ -2,7 +2,12 @@
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
-  Chats: undefined;
+  Tabs: undefined;
   ChatRoom: { other: string };
   Settings: undefined;
+};
+
+export type TabParamList = {
+  Friends: undefined;
+  Chats: undefined;
 };

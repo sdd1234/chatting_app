@@ -1,114 +1,82 @@
-import { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl,
+  View, Text, FlatList, TouchableOpacity, StyleSheet,
 } from 'react-native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../nav/types';
 import { useAuth, useChat, dmKey } from '../lib/store';
-import { fetchUsers } from '../lib/api';
-import { subscribeStatus } from '../lib/ws';
+import { Avatar } from '../components/Avatar';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Chats'>;
+function fmtTime(ts: number) {
+  const d = new Date(ts);
+  const h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, '0');
+  const ampm = h < 12 ? '오전' : '오후';
+  return `${ampm} ${h % 12 || 12}:${m}`;
+}
 
-export default function ChatsScreen({ navigation }: Props) {
+export default function ChatsScreen() {
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const me = useAuth((s) => s.user);
   const rooms = useChat((s) => s.rooms);
   const unread = useChat((s) => s.unreadCount);
-  const [friends, setFriends] = useState<string[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [connected, setConnected] = useState(false);
 
-  useEffect(() => subscribeStatus((s) => setConnected(s.connected)), []);
-
-  const loadFriends = useCallback(async () => {
-    setRefreshing(true);
-    try { setFriends((await fetchUsers()).filter((u) => u !== me)); }
-    finally { setRefreshing(false); }
-  }, [me]);
-
-  useEffect(() => { loadFriends(); }, [loadFriends]);
-
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
-          <Text style={{ fontSize: 20 }}>⚙️</Text>
-        </TouchableOpacity>
-      ),
-      headerTitle: `채팅 ${connected ? '🟢' : '⚪️'}`,
-    });
-  }, [navigation, connected]);
-
-  // 대화방 목록 = rooms 에 있는 상대들 (마지막 메시지 순)
-  const roomList = Object.keys(rooms)
+  const list = Object.keys(rooms)
+    .filter((k) => k.startsWith('dm:'))
     .map((k) => {
-      const other = k.startsWith('dm:') ? k.slice(3) : k;
+      const other = k.slice(3);
       const msgs = rooms[k] || [];
       const last = msgs[msgs.length - 1];
-      return { other, last, key: k };
+      return { other, last, key: k, unread: unread[dmKey(other)] || 0 };
     })
-    .filter((r) => r.last)
+    .filter((r) => r.other && r.other !== me && r.last)
     .sort((a, b) => (b.last!.ts || 0) - (a.last!.ts || 0));
 
-  // 아직 대화 없는 친구
-  const roomOthers = new Set(roomList.map((r) => r.other));
-  const freshFriends = friends.filter((f) => !roomOthers.has(f));
-
   return (
-    <FlatList
-      style={styles.root}
-      data={roomList}
-      keyExtractor={(r) => r.key}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadFriends} />}
-      ListHeaderComponent={
-        freshFriends.length ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>친구</Text>
-            <View style={styles.friendRow}>
-              {freshFriends.map((f) => (
-                <TouchableOpacity key={f} style={styles.friendChip} onPress={() => navigation.navigate('ChatRoom', { other: f })}>
-                  <Text style={styles.friendChipText}>{f}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        ) : null
-      }
-      renderItem={({ item }) => {
-        const u = unread[dmKey(item.other)] || 0;
-        const preview = item.last?.file ? '📎 파일' : item.last?.body ?? '';
-        return (
-          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('ChatRoom', { other: item.other })}>
-            <View style={styles.avatar}><Text style={styles.avatarText}>{item.other[0]?.toUpperCase()}</Text></View>
-            <View style={styles.rowBody}>
-              <Text style={styles.rowName}>{item.other}</Text>
-              <Text style={styles.rowPreview} numberOfLines={1}>{preview}</Text>
-            </View>
-            {u > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{u}</Text></View>}
-          </TouchableOpacity>
-        );
-      }}
-      ListEmptyComponent={
-        !freshFriends.length ? <Text style={styles.empty}>아래로 당겨 친구 목록을 새로고침하세요</Text> : null
-      }
-    />
+    <View style={styles.root}>
+      <View style={styles.headerRow}>
+        <Text style={styles.header}>채팅</Text>
+        <TouchableOpacity onPress={() => nav.navigate('Settings')}><Text style={styles.gear}>⚙️</Text></TouchableOpacity>
+      </View>
+      <FlatList
+        data={list}
+        keyExtractor={(r) => r.key}
+        ListEmptyComponent={<Text style={styles.empty}>친구 탭에서 대화를 시작하세요</Text>}
+        renderItem={({ item }) => {
+          const preview = item.last?.file ? '📎 파일' : item.last?.body ?? '';
+          return (
+            <TouchableOpacity style={styles.row} onPress={() => nav.navigate('ChatRoom', { other: item.other })}>
+              <Avatar name={item.other} size={48} />
+              <View style={styles.body}>
+                <Text style={styles.name}>{item.other}</Text>
+                <Text style={styles.preview} numberOfLines={1}>{preview}</Text>
+              </View>
+              <View style={styles.meta}>
+                {!!item.last && <Text style={styles.time}>{fmtTime(item.last.ts)}</Text>}
+                {item.unread > 0 && (
+                  <View style={styles.badge}><Text style={styles.badgeText}>{item.unread}</Text></View>
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        }}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#fff' },
-  section: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  sectionTitle: { fontSize: 12, color: '#999', marginBottom: 8, fontWeight: '600' },
-  friendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  friendChip: { backgroundColor: '#f2f2f2', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 7 },
-  friendChipText: { fontSize: 14, color: '#333' },
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
-  avatar: { width: 44, height: 44, borderRadius: 16, backgroundColor: '#FEE500', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 18, fontWeight: '700', color: '#3c1e1e' },
-  rowBody: { flex: 1, marginLeft: 12 },
-  rowName: { fontSize: 16, fontWeight: '600', color: '#191919' },
-  rowPreview: { fontSize: 13, color: '#999', marginTop: 2 },
-  badge: { backgroundColor: '#ff3b30', borderRadius: 11, minWidth: 22, height: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  badgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16, borderBottomWidth: 1, borderBottomColor: '#E5E5E5' },
+  header: { fontSize: 20, fontWeight: '700', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12 },
+  gear: { fontSize: 20 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
+  body: { flex: 1, marginLeft: 12 },
+  name: { fontSize: 15, fontWeight: '600', color: '#191919' },
+  preview: { fontSize: 13, color: '#999', marginTop: 3 },
+  meta: { alignItems: 'flex-end' },
+  time: { fontSize: 11, color: '#bbb' },
+  badge: { backgroundColor: '#ff3b30', borderRadius: 11, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, marginTop: 4 },
+  badgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   empty: { textAlign: 'center', color: '#bbb', marginTop: 60, fontSize: 14 },
 });

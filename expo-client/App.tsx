@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import type { RootStackParamList } from './src/nav/types';
+import type { RootStackParamList, TabParamList } from './src/nav/types';
 import { useAuth, hydrateAuth, useChat } from './src/lib/store';
 import { hydrateSettings } from './src/lib/settings';
 import { connectWS, disconnectWS } from './src/lib/ws';
@@ -12,11 +14,34 @@ import { startAutoRefresh, stopAutoRefresh } from './src/lib/refresh';
 
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import FriendsScreen from './src/screens/FriendsScreen';
 import ChatsScreen from './src/screens/ChatsScreen';
 import ChatRoomScreen from './src/screens/ChatRoomScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const Tab = createBottomTabNavigator<TabParamList>();
+
+function tabIcon(emoji: string) {
+  return ({ focused }: { focused: boolean }) => (
+    <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.4 }}>{emoji}</Text>
+  );
+}
+
+function Tabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: '#000',
+        tabBarInactiveTintColor: '#888',
+      }}
+    >
+      <Tab.Screen name="Friends" component={FriendsScreen} options={{ title: '친구', tabBarIcon: tabIcon('👥') }} />
+      <Tab.Screen name="Chats" component={ChatsScreen} options={{ title: '채팅', tabBarIcon: tabIcon('💬') }} />
+    </Tab.Navigator>
+  );
+}
 
 const screenOptions = {
   headerStyle: { backgroundColor: '#FEE500' },
@@ -59,12 +84,13 @@ export default function App() {
   }
 
   return (
+    <SafeAreaProvider>
     <NavigationContainer>
       <StatusBar style="dark" />
       <Stack.Navigator screenOptions={screenOptions}>
         {token ? (
           <>
-            <Stack.Screen name="Chats" component={ChatsScreen} />
+            <Stack.Screen name="Tabs" component={Tabs} options={{ headerShown: false }} />
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: '설정' }} />
           </>
@@ -76,6 +102,7 @@ export default function App() {
         )}
       </Stack.Navigator>
     </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 
