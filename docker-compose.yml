@@ -177,6 +177,30 @@ services:
       start_period: 10s
 
   ##
+  ## React 카톡 웹 UI — vite 정적빌드를 nginx 로 서빙 + 백엔드 리버스프록시
+  ## - 웹:        http://localhost:5173  (폰: http://<PC LAN IP>:5173)
+  ## - APK 다운:  http://localhost:5173/app.apk  → 안드로이드 설치
+  ## - 상대경로(/auth /users /ws /ws/notice ...)를 nginx 가 백엔드 컨테이너로 프록시
+  ##   → 클론한 쪽은 Node 설치 없이 docker compose up 한 줄로 웹까지 뜸
+  ##
+  xmpp-web:
+    build: ./react-client
+    container_name: xmpp-web
+    hostname: xmpp-web
+    restart: unless-stopped
+    depends_on:
+      - xmpp-spring
+      - xmpp-chat
+    ports:
+      - "5173:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  ##
   ## 1회성: 버킷 생성 + 익명 다운로드 허용
   ##
   xmpp-storage-init:

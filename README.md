@@ -17,7 +17,7 @@ git clone https://github.com/sdd1234/chatting_app.git
 cd chatting_app
 docker compose up -d --build
 ```
-다음 **6개** 컨테이너가 올라옵니다 (최초 실행은 빌드/이미지 다운로드로 몇 분 소요):
+다음 **7개** 컨테이너가 올라옵니다 (최초 실행은 빌드/이미지 다운로드로 몇 분 소요):
 | 컨테이너 | 포트 | 역할 |
 |---|---|---|
 | `xmpp-server` (MongooseIM) | 5222 (XMPP) · 5280 (HTTP-WS) · 5551 (GraphQL admin) | XMPP 서버 본체, `mod_mam` 으로 영구 저장 |
@@ -26,19 +26,26 @@ docker compose up -d --build
 | `xmpp-redis` (Redis) | 6379 | 세션 / 오프라인 inbox / 공지 pub-sub |
 | `xmpp-spring` (Spring Boot) | 8081 | 로그인 / JWT / 공지 / Mongoose 프록시 |
 | `xmpp-chat` (Node plain-ws) | 8090 | 실제 채팅 WebSocket 라우터 + 데모 화면 |
+| `xmpp-web` (React + nginx) | 5173 | 카톡 웹 UI (정적빌드) + 백엔드 프록시 + `/app.apk` 배포 |
 
 ### 2. 바로 써보기 (추가 설치 없이)
-브라우저에서 **http://localhost:8090/test.html** 접속 → 로그인 / 채팅 / 공지 데모를 바로 확인.
+`docker compose up` 한 줄이면 **카톡 웹 UI까지 같이 뜹니다** (Node 설치 불필요):
+- **카톡 웹 UI**: http://localhost:5173 — `xmpp-web`(nginx) 컨테이너가 React 정적빌드를 서빙하고
+  `/auth` `/users` `/ws` `/ws/notice` `/files` `/translate` 등 상대경로를 백엔드 컨테이너로 프록시.
+- **데모 화면**: http://localhost:8090/test.html — 로그인 / 채팅 / 공지 raw 데모.
+- **안드로이드 APK**: http://localhost:5173/app.apk — 폰에서 받아 설치 (같은 LAN, 앱 설정에 PC IP 입력).
+
 JWT 시크릿은 Spring(`:8081`)과 채팅서버(`:8090`)가 동일 기본값을 공유하도록 compose에 설정돼 있어
 별도 맞춤 작업 없이 인증이 통합 동작합니다.
 
-> 아래 3~4번(React/Expo)은 **선택** — 풀 카톡 UI를 보고 싶을 때만 추가로 dev 서버를 띄우면 됩니다.
+> 폰/다른 기기에서 접속하려면 `localhost` 대신 **PC의 LAN IP**(예: `http://192.168.0.9:5173`)를 쓰세요.
 
-### 3. React 카톡 UI 기동 (웹, 선택)
+### 3. (개발용, 선택) React dev 서버 직접 기동
+코드를 고치며 HMR 로 개발할 때만 필요합니다. 단순 시연이면 위 `:5173`(docker)로 충분.
 ```bash
 cd react-client
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # http://localhost:5173 (docker xmpp-web 끄고 띄울 것 — 포트 충돌)
 ```
 > WSL 의 `/mnt/c`(9p) 에서 돌리면 vite 가 파일변경을 못 잡으므로 `vite.config.ts` 의
 > `server.watch.usePolling: true` 로 HMR 을 정상화해 둠.
