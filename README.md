@@ -8,11 +8,16 @@
 
 ## 빠른 시작
 
-### 1. 백엔드 인프라 기동 (Docker Compose)
+> **세팅 0 → 한 방 실행.** Docker만 설치돼 있으면 클론 후 아래 한 줄이면 끝입니다.
+> 별도 설정 파일·환경변수·수동 빌드 불필요 (공개 이미지는 자동 pull, Spring/채팅서버는 소스에서 자동 빌드).
+
+### 1. 전체 스택 기동 (Docker Compose 한 방)
 ```bash
-docker compose up -d
+git clone https://github.com/sdd1234/chatting_app.git
+cd chatting_app
+docker compose up -d --build
 ```
-다음 5개 컨테이너가 올라옵니다:
+다음 **6개** 컨테이너가 올라옵니다 (최초 실행은 빌드/이미지 다운로드로 몇 분 소요):
 | 컨테이너 | 포트 | 역할 |
 |---|---|---|
 | `xmpp-server` (MongooseIM) | 5222 (XMPP) · 5280 (HTTP-WS) · 5551 (GraphQL admin) | XMPP 서버 본체, `mod_mam` 으로 영구 저장 |
@@ -20,15 +25,16 @@ docker compose up -d
 | `xmpp-storage` (MinIO) | 9000 / 9001 | 파일 첨부 저장 |
 | `xmpp-redis` (Redis) | 6379 | 세션 / 오프라인 inbox / 공지 pub-sub |
 | `xmpp-spring` (Spring Boot) | 8081 | 로그인 / JWT / 공지 / Mongoose 프록시 |
+| `xmpp-chat` (Node plain-ws) | 8090 | 실제 채팅 WebSocket 라우터 + 데모 화면 |
 
-### 2. 채팅 라우터 (plain-ws) 기동
-```bash
-cd plain-ws
-npm install
-node server.js   # :8090 JSON-over-WebSocket
-```
+### 2. 바로 써보기 (추가 설치 없이)
+브라우저에서 **http://localhost:8090/test.html** 접속 → 로그인 / 채팅 / 공지 데모를 바로 확인.
+JWT 시크릿은 Spring(`:8081`)과 채팅서버(`:8090`)가 동일 기본값을 공유하도록 compose에 설정돼 있어
+별도 맞춤 작업 없이 인증이 통합 동작합니다.
 
-### 3. React 카톡 UI 기동 (웹)
+> 아래 3~4번(React/Expo)은 **선택** — 풀 카톡 UI를 보고 싶을 때만 추가로 dev 서버를 띄우면 됩니다.
+
+### 3. React 카톡 UI 기동 (웹, 선택)
 ```bash
 cd react-client
 npm install

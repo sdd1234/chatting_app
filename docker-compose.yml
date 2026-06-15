@@ -145,6 +145,38 @@ services:
       start_period: 90s
 
   ##
+  ## plain-ws — 실제 채팅 라우터 (Node + ws). MongooseIM 안 거침.
+  ## - 채팅 WebSocket: ws://localhost:8090/ws
+  ## - 데모 화면:      http://localhost:8090/test.html
+  ## - Redis = 세션 + 오프라인 큐 (휘발성). 메시지는 Mongoose에 GraphQL 미러링.
+  ## - JWT_SECRET 은 반드시 xmpp-spring 과 동일해야 함(같은 기본값 사용).
+  ##
+  xmpp-chat:
+    build: ./plain-ws
+    container_name: xmpp-chat
+    hostname: xmpp-chat
+    restart: unless-stopped
+    depends_on:
+      xmpp-redis:
+        condition: service_healthy
+    ports:
+      - "8090:8090"   # 채팅 WS + 데모 정적 페이지(test.html)
+    environment:
+      PORT: "8090"
+      REDIS_URL: redis://xmpp-redis:6379
+      JWT_SECRET: ${JWT_SECRET:-demo-secret-change-me-32bytes-minimum-please-xx}
+      MONGOOSE_GRAPHQL_URL: http://xmpp-server:5551/api/graphql
+      MONGOOSE_GRAPHQL_USER: admin
+      MONGOOSE_GRAPHQL_PASS: secret
+      MONGOOSE_DOMAIN: localhost
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8090/ >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  ##
   ## 1회성: 버킷 생성 + 익명 다운로드 허용
   ##
   xmpp-storage-init:

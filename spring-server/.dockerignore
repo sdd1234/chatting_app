@@ -1,5 +1,7 @@
 target/
+uploads/
 .idea/
-*.iml
 .vscode/
+*.iml
 .mvn/
+*.log
