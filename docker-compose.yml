@@ -49,13 +49,19 @@ services:
 
     environment:
       - MONGOOSEIM_CONFIG_FORMAT=toml
+      # 싱글 노드만 운영 — 기본 동작(존재하지 않는 mongooseim@mongooseim-1 에 클러스터 합류)이
+      # 콜드 부팅 첫 시도를 ~5s 만에 죽이고 restart 정책으로 재기동시킴. 그동안 compose 는
+      # "dependency unhealthy" 로 xmpp-spring 을 포기해 시드가 안 도는 데드락이 발생.
+      - JOIN_CLUSTER=false
 
     healthcheck:
       test: ["CMD", "mongooseimctl", "status"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      # 콜드 부팅(빈 Mnesia)에서 Erlang VM + 스키마 부팅이 30s 초과 → spring 이 dependency unhealthy 로 포기.
+      # 여유롭게 120s. start_period 동안은 healthcheck 실패가 retries 카운트에 안 잡힘.
+      start_period: 120s
 
   ##
   ## MinIO — S3 호환 오브젝트 스토리지 (이미지/파일 업로드용)
@@ -121,6 +127,11 @@ services:
     restart: unless-stopped
     depends_on:
       xmpp-redis:
+        condition: service_healthy
+      # MongooseIM 도 healthy 까지 대기 — 안 그러면 부팅 시점 시드(admin/jihoon/emma/minho)
+      # registerUser 호출이 :5551 connection refused 로 실패해, Redis 엔 role 만 박히고
+      # Mongoose 엔 계정이 없는 좀비 상태가 됨 → 로그인 401, 가입 409 데드락.
+      xmpp-server:
         condition: service_healthy
     ports:
       - "8081:8080"
