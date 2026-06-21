@@ -37,6 +37,7 @@ export default defineConfig({
       '/auth':           { target: 'http://localhost:8081', changeOrigin: true },
       '/admin':          { target: 'http://localhost:8081', changeOrigin: true },
       '/users':          { target: 'http://localhost:8081', changeOrigin: true },
+      '/friends':        { target: 'http://localhost:8081', changeOrigin: true },
       '/translate':      { target: 'http://localhost:8081', changeOrigin: true },
       '/files':          { target: 'http://localhost:8081', changeOrigin: true },
       '/ws/notice':      { target: 'ws://localhost:8081', ws: true, changeOrigin: true },

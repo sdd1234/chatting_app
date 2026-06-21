@@ -6,6 +6,14 @@ server:
 spring:
   application:
     name: notice-server
+  datasource:
+    url:      ${DB_URL:jdbc:postgresql://xmpp-db:5432/mongooseim}
+    username: ${DB_USER:mongooseim}
+    password: ${DB_PASS:mongooseim_secret}
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
   data:
     redis:
       host: ${REDIS_HOST:xmpp-redis}
