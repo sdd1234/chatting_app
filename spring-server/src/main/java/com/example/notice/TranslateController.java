@@ -59,17 +59,23 @@ public class TranslateController {
         String text = str(body.get("text"));
         String target = str(body.get("target"));
         String source = body.get("source") == null ? "auto" : str(body.get("source"));
+        log.debug("[DBG:trans:1] 번역 요청 text='{}' target={} source={}", text, target, source);
         if (text.isEmpty() || target.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "fields 'text' and 'target' required");
         }
 
         String key = source + "::" + target + "::" + text;
         String[] hit = cache.get(key);
-        if (hit != null) return result(hit[0], hit[1], true);
+        if (hit != null) {
+            log.debug("[DBG:trans:2] 캐시 히트 key={} → 즉시 반환", key);
+            return result(hit[0], hit[1], true);
+        }
+        log.debug("[DBG:trans:2] 캐시 미스 → Google 비공식 API 호출 시작");
 
         try {
             String url = "https://translate.googleapis.com/translate_a/single?client=gtx"
                     + "&sl=" + enc(source) + "&tl=" + enc(target) + "&dt=t&q=" + enc(text);
+            log.debug("[DBG:trans:3] HTTP GET → translate.googleapis.com sl={} tl={}", source, target);
             HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                     .header("User-Agent", "Mozilla/5.0")
                     .timeout(Duration.ofSeconds(8))
@@ -88,8 +94,10 @@ public class TranslateController {
             }
             String translated = sb.toString();
             String detected = (root.size() > 2 && !root.get(2).isNull()) ? root.get(2).asText() : source;
+            log.debug("[DBG:trans:4] Google 응답 translated='{}' detected={}", translated, detected);
 
             cache.put(key, new String[]{ translated, detected });
+            log.debug("[DBG:trans:5] 메모리 캐시 저장 완료 → 응답 반환");
             return result(translated, detected, false);
         } catch (ResponseStatusException e) {
             throw e;

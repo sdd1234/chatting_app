@@ -2,6 +2,8 @@ package com.example.notice;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -18,6 +20,8 @@ import java.util.Map;
 @RequestMapping("/auth")
 public class AuthController {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+
     private final UserService users;
     private final JwtUtil jwt;
 
@@ -30,14 +34,20 @@ public class AuthController {
     public Map<String, Object> login(@RequestBody Map<String, String> body) {
         String user = body.get("user");
         String pass = body.get("password");
+        log.debug("[DBG:login:1] 로그인 요청 user={}", user);
         if (user == null || pass == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "user + password required");
         }
+        log.debug("[DBG:login:2] UserService.verify() 호출 → Mongoose checkPassword");
         if (!users.verify(user, pass)) {
+            log.debug("[DBG:login:ERR] 비밀번호 불일치 → 401");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid credentials");
         }
+        log.debug("[DBG:login:3] 비밀번호 검증 성공");
         String role = users.roleOf(user);
+        log.debug("[DBG:login:4] Redis role 조회 완료 role={}", role);
         String token = jwt.issue(user, role);
+        log.debug("[DBG:login:5] JWT 발급 완료 → 응답 반환");
         return Map.of(
             "token",        token,
             "user",         user,
@@ -54,8 +64,11 @@ public class AuthController {
     public Map<String, Object> register(@RequestBody Map<String, String> body) {
         String user = body.get("user");
         String pass = body.get("password");
+        log.debug("[DBG:register:1] 회원가입 요청 user={}", user);
         try {
+            log.debug("[DBG:register:2] UserService.register() 진입 → 유효성검사/Redis중복/Mongoose등록");
             users.register(user, pass);
+            log.debug("[DBG:register:3] 등록 완료 → JWT 발급");
         } catch (UserService.RegisterException e) {
             HttpStatus s = switch (e.code) {
                 case BAD_INPUT    -> HttpStatus.BAD_REQUEST;

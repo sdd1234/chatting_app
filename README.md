@@ -242,6 +242,7 @@ MongooseIM/
 | **5주차** | **Spring Boot + React 프레임워크 통합** (이번 산출물) | ✅ |
 | **6주차** | ① 메시지 송신 시 토큰 만료 검증 = plain-ws 자체 (③안)<br>② React → React Native **Expo CLI** 전환 (RN CLI 금지) + 파일첨부·번역 | ① ✅ / ② ✅ (실폰 구동만 남음) |
 | **7주차** | ① JWT 인증 구조 점검 (Spring↔plain-ws 알고리즘 일치 / MongooseIM 인증 커스텀 가능성)<br>② 기능 모듈별 구조 정리 (채팅·파일·번역·주소록)<br>③ 파일 전송 플로우 점검 (업로드→URL 전송→다운로드) | ✅ 점검·문서화 |
+| **8주차** | ① 실제 `[DBG:*]` 로그 삽입 → `docker logs` 실측 → 기능별 코드 플로우 PDF 작성<br>② 친구 목록 회원 필터링 구현 (예정) | ① ✅ |
 
 자세한 미팅 결정사항: 위 표의 6주차 항목 참조
 
@@ -398,6 +399,114 @@ MongooseIM 은 **JWT 인증 백엔드 `[auth.jwt]` 를 공식 지원**한다(공
 - **전송**: 메시지엔 파일 메타만 → plain-ws 가 일반 텍스트처럼 라우팅(서버 무변경). 웹·모바일 인코딩 동일 → 교차 송수신 OK.
 - **다운로드**: 수신자가 `fileUrl(id)` = `GET /files/{id}` 로 받음.
 - ✅ **다운로드도 JWT 인증 적용**(`FileController.java`, 7주차 패치). `GET /files/{id}` 는 `Authorization: Bearer` 헤더 또는 `?token=<JWT>` 쿼리(브라우저 `<img>`/`<a>` 는 헤더 불가) 중 하나로 유효 토큰을 요구하며, 없으면 401. 토큰은 메시지에 저장하지 않고 **렌더 시점에 각 클라가 자기 토큰을 부착**(react `authedUrl`, expo `fileSrcUrl`). 권한 범위는 "인증된 사용자" — 수신자도 받아야 하고 `.meta` 에 수신자가 기록되지 않아 owner-only 로는 막지 않는다(더 엄격한 per-수신자 ACL 은 전송 시점 허용 JID 기록이 필요, 추후).
+
+---
+
+## 8주차 — 실행 디버그: 기능별 코드 플로우 추적
+
+과제: 6개 기능(회원가입·로그인·주소록·채팅·파일전송·번역)에 `[DBG:*]` 로그를 직접 삽입하고, `docker logs` 로 실측하여 코드가 실제로 어떤 순서로 실행되는지 추적했다.
+
+### 로그 삽입 위치
+
+| 파일 | 추가된 [DBG:*] 태그 |
+|---|---|
+| `spring-server/.../AuthController.java` | `[DBG:login:1~5]`, `[DBG:login:ERR]`, `[DBG:register:1~3]` |
+| `spring-server/.../UserService.java` | `[DBG:verify:1~2]`, `[DBG:register:A~C]`, `[DBG:register:ERR]` |
+| `spring-server/.../FileController.java` | `[DBG:file-upload:1~5]`, `[DBG:file-dl:1~4]` |
+| `spring-server/.../TranslateController.java` | `[DBG:trans:1~5]` |
+| `spring-server/.../UserDirectoryController.java` | `[DBG:users:1~3]` |
+| `plain-ws/server.js` | `[DBG:hello:1~10]`, `[DBG:msg:1~9]`, `[DBG:close:1~2]` |
+
+`logging.level.com.example.notice: DEBUG` (`application.yml`) 로 활성화.
+
+### 실측 docker logs 결과 (요약)
+
+**회원가입** (`docker logs xmpp-spring`)
+```
+[DBG:register:1] 회원가입 요청 user=testuser90291
+[DBG:register:A] Redis 중복 체크 key=auth:user:testuser90291
+[DBG:register:B] Mongoose registerUser 호출 domain=localhost username=testuser90291
+[DBG:register:C] Mongoose 등록 성공 → Redis HSET auth:user:testuser90291 role=user
+[DBG:register:3] 등록 완료 → JWT 발급
+```
+
+**로그인 성공 / 실패** (`docker logs xmpp-spring`)
+```
+[DBG:login:1] 로그인 요청 user=testuser90291
+[DBG:verify:1] Mongoose checkPassword 호출 jid=testuser90291@localhost
+[DBG:verify:2] checkPassword 응답 correct=true          ← 성공 시
+[DBG:login:3] 비밀번호 검증 성공
+[DBG:login:4] Redis role 조회 완료 role=user
+[DBG:login:5] JWT 발급 완료 → 응답 반환
+
+[DBG:verify:2] checkPassword 응답 correct=false         ← 실패 시
+[DBG:login:ERR] 비밀번호 불일치 → 401
+```
+
+**주소록** (`docker logs xmpp-spring`)
+```
+[DBG:users:1] 주소록 조회 요청 (JWT 검증 시작)
+[DBG:users:2] JWT 검증 완료 → Mongoose listUsers GraphQL 호출 domain=localhost
+[DBG:users:3] Mongoose 응답 수신 → 11명 목록 반환
+```
+
+**채팅 WS 연결 + 메시지** (`docker logs xmpp-chat`)
+```
+[DBG:hello:1] 수신 deviceId=dev-trace-a tokenLength=160
+[DBG:hello:3] JWT 검증 성공 sub=testuser90291 role=user
+[DBG:hello:6] Redis 세션 생성 완료 sid=... TTL=300s
+[DBG:hello:7] welcome 전송 → client (online=1명, myDevices=1개)
+[DBG:hello:9] inbox drain 시작 (Redis LRANGE inbox:testuser90291)
+[DBG:hello:10] inbox 비어있음 (드레인 없음)
+
+[DBG:msg:1] 수신 from=testuser90291 to=alice bodyLen=19
+[DBG:msg:3] JWT 재검증 성공
+[DBG:msg:5] 메시지 객체 생성 id=... ts=1782044291000
+[DBG:msg:6] Carbon Copy → 발신자(testuser90291) 디바이스 1개에 echo 완료
+[DBG:msg:7] 수신자(alice) 온라인 → 1개 디바이스에 즉시 전달
+[DBG:msg:8] Mongoose 미러링 시작 (fire-and-forget, 비차단)
+[mongoose-mirror] testuser90291@localhost → alice@localhost ok stanza-id=396d63663579e309
+```
+
+**파일 업로드 / 다운로드** (`docker logs xmpp-spring`)
+```
+[DBG:file-upload:2] JWT 검증 완료 user=testuser90291
+[DBG:file-upload:3] UUID id 생성 id=a803e86484704e3683cadcf80004eb27 name=test.txt mime=text/plain size=30
+[DBG:file-upload:4] 파일 바이트 저장 완료 → /data/uploads/a803e86484704e3683cadcf80004eb27
+[DBG:file-upload:5] .meta 저장 완료 → 응답 반환
+
+[DBG:file-dl:1] 다운로드 요청 id=a803e86484704e3683cadcf80004eb27 인증방식=헤더(Authorization)
+[DBG:file-dl:3] 파일 읽기 완료 bytes=30 mime=text/plain name=test.txt
+[DBG:file-dl:4] 응답 전송 disposition=inline; filename="test.txt"; filename*=UTF-8''test.txt
+
+[DBG:file-dl:1] 다운로드 요청 id=... 인증방식=쿼리(?token=)   ← 브라우저 img/a 태그 케이스
+```
+
+**번역 (캐시 미스 / 히트)** (`docker logs xmpp-spring`)
+```
+[DBG:trans:1] 번역 요청 text='안녕하세요 반갑습니다' target=en source=auto
+[DBG:trans:2] 캐시 미스 → Google 비공식 API 호출 시작
+[DBG:trans:3] HTTP GET → translate.googleapis.com sl=auto tl=en
+[DBG:trans:4] Google 응답 translated='hello nice to meet you' detected=ko
+[DBG:trans:5] 메모리 캐시 저장 완료 → 응답 반환
+
+[DBG:trans:1] 번역 요청 text='안녕하세요 반갑습니다' target=en source=auto
+[DBG:trans:2] 캐시 히트 key=auto::en::안녕하세요 반갑습니다 → 즉시 반환
+```
+
+### 실측 타이밍
+
+| 기능 | 소요 | 경로 |
+|---|---|---|
+| 회원가입 | ~36ms | Spring → Mongoose registerUser → Redis HSET → JWT |
+| 로그인 성공 | ~16ms | Spring → Mongoose checkPassword → Redis role → JWT |
+| 로그인 실패 | ~9ms | Mongoose correct=false → 즉시 401 |
+| 주소록 | ~33ms | Spring → Mongoose listUsers → 11명 반환 |
+| 채팅 echo | ~9ms | WS send → 서버 처리 → Carbon Copy |
+| 파일 업로드 | ~17ms | JWT 검증 → UUID → 디스크 → .meta |
+| 파일 다운로드 | ~10ms | JWT 검증 → 파일 읽기 → 응답 |
+| 번역 캐시 미스 | ~558ms | Google 비공식 API 외부 호출 |
+| 번역 캐시 히트 | ~11ms | ConcurrentHashMap 메모리 즉시 반환 |
 
 ---
 

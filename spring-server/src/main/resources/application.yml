@@ -65,4 +65,4 @@ management:
 
 logging:
   level:
-    com.example.notice: INFO
+    com.example.notice: DEBUG

@@ -62,7 +62,9 @@ public class UserDirectoryController {
     @GetMapping("/users")
     public Map<String, Object> users(
             @RequestHeader(value = "Authorization", required = false) String auth) throws Exception {
+        log.debug("[DBG:users:1] 주소록 조회 요청 (JWT 검증 시작)");
         requireUser(auth);
+        log.debug("[DBG:users:2] JWT 검증 완료 → Mongoose listUsers GraphQL 호출 domain={}", domain);
 
         String q = "query($d:DomainName!) { account { listUsers(domain:$d) } }";
         String raw = client.post()
@@ -75,10 +77,14 @@ public class UserDirectoryController {
         if (root.has("errors")) {
             out.put("ok", false);
             out.put("errors", json.convertValue(root.get("errors"), Object.class));
+            log.debug("[DBG:users:ERR] Mongoose 오류 응답 errors={}", root.get("errors"));
         } else {
+            Object userList = json.convertValue(root.path("data").path("account").path("listUsers"), Object.class);
+            int count = userList instanceof java.util.List ? ((java.util.List<?>)userList).size() : 0;
+            log.debug("[DBG:users:3] Mongoose 응답 수신 → {}명 목록 반환", count);
             out.put("ok", true);
             out.put("domain", domain);
-            out.put("users", json.convertValue(root.path("data").path("account").path("listUsers"), Object.class));
+            out.put("users", userList);
         }
         return out;
     }

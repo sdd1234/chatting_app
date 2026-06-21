@@ -65,7 +65,9 @@ public class FileController {
     public Map<String, Object> upload(
             @RequestHeader(value = "Authorization", required = false) String auth,
             @RequestParam("file") MultipartFile file) {
+        log.debug("[DBG:file-upload:1] 업로드 요청 수신 (JWT 검증 시작)");
         Claims c = requireUser(auth);
+        log.debug("[DBG:file-upload:2] JWT 검증 완료 user={}", c.getSubject());
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "field 'file' required");
         }
@@ -73,15 +75,18 @@ public class FileController {
         String id = UUID.randomUUID().toString().replace("-", "");
         String name = sanitizeName(file.getOriginalFilename());
         String mime = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
+        log.debug("[DBG:file-upload:3] UUID id 생성 id={} name={} mime={} size={}", id, name, mime, file.getSize());
 
         try {
             Files.copy(file.getInputStream(), dir.resolve(id), StandardCopyOption.REPLACE_EXISTING);
+            log.debug("[DBG:file-upload:4] 파일 바이트 저장 완료 → {}/{}", dir, id);
             Map<String, Object> meta = new LinkedHashMap<>();
             meta.put("name", name);
             meta.put("mime", mime);
             meta.put("size", file.getSize());
             meta.put("owner", c.getSubject());
             json.writeValue(dir.resolve(id + ".meta").toFile(), meta);
+            log.debug("[DBG:file-upload:5] .meta 저장 완료 → 응답 반환 {{id:{}, name:{}, mime:{}, size:{}}}", id, name, mime, file.getSize());
         } catch (IOException e) {
             log.error("file save failed", e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "save failed: " + e.getMessage());
@@ -101,7 +106,10 @@ public class FileController {
             @RequestHeader(value = "Authorization", required = false) String auth,
             @RequestParam(value = "token", required = false) String token,
             @RequestParam(value = "dl", required = false) String dl) {
-        Claims c = requireUserFlexible(auth, token);   // 헤더 또는 ?token= — 둘 다 없으면 401
+        String authMode = (auth != null && auth.startsWith("Bearer ")) ? "헤더(Authorization)" : "쿼리(?token=)";
+        log.debug("[DBG:file-dl:1] 다운로드 요청 id={} 인증방식={}", id, authMode);
+        Claims c = requireUserFlexible(auth, token);
+        log.debug("[DBG:file-dl:2] JWT 검증 완료 user={}", c.getSubject());
         if (!id.matches("[a-zA-Z0-9]+")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bad id");
         }
@@ -123,13 +131,13 @@ public class FileController {
                     log.debug("file {} downloaded by {} (owner {})", id, c.getSubject(), owner);
                 }
             }
-            // ?dl=1 이면 attachment(브라우저 다운로드 강제), 아니면 inline(미리보기).
-            // 한글 파일명은 RFC 5987 filename* 로, 폴백은 ASCII 로 안전하게.
+            log.debug("[DBG:file-dl:3] 파일 읽기 완료 bytes={} mime={} name={}", bytes.length, mime, name);
             boolean attach = dl != null && !dl.isBlank();
             String enc = URLEncoder.encode(name, StandardCharsets.UTF_8).replace("+", "%20");
             String ascii = name.replaceAll("[^\\x20-\\x7E]", "_").replace("\"", "_");
             String disp = (attach ? "attachment" : "inline")
                     + "; filename=\"" + ascii + "\"; filename*=UTF-8''" + enc;
+            log.debug("[DBG:file-dl:4] 응답 전송 disposition={}", disp);
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(mime))
                     .header(HttpHeaders.CONTENT_DISPOSITION, disp)

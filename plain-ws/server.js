@@ -367,6 +367,7 @@ wss.on('connection', (ws, req) => {
       //   payload.sub 를 user 로 사용 — m.user 는 무시 (위변조 방지).
       //   m.deviceId 도 의무화. 같은 (user, deviceId) 만 replaced 처리, 다른 deviceId 는 공존.
       if (m.type === 'hello') {
+        console.log(`[DBG:hello:1] 수신 deviceId=${m.deviceId} tokenLength=${m.token?.length}`);
         if (!m.token || typeof m.token !== 'string') {
           send(ws, { type: 'error', code: 'token_required', message: 'token required — POST /auth/login on :8081 first' });
           return ws.close(4001, 'token required');
@@ -377,8 +378,11 @@ wss.on('connection', (ws, req) => {
         }
         let payload;
         try {
+          console.log(`[DBG:hello:2] JWT 검증 시작 (HS256)`);
           payload = jwt.verify(m.token, JWT_SECRET, { algorithms: ['HS256'] });
+          console.log(`[DBG:hello:3] JWT 검증 성공 sub=${payload.sub} role=${payload.role} exp=${new Date(payload.exp*1000).toISOString()}`);
         } catch (e) {
+          console.log(`[DBG:hello:ERR] JWT 검증 실패: ${e.message}`);
           send(ws, { type: 'error', code: 'invalid_token', message: 'invalid token: ' + e.message });
           return ws.close(4001, 'invalid token');
         }
@@ -393,30 +397,36 @@ wss.on('connection', (ws, req) => {
         authToken = m.token;
         const deviceType = (typeof m.deviceType === 'string') ? m.deviceType : 'web';
 
-        // 같은 (user, deviceId) 재접속 — 이전 소켓만 교체. 다른 deviceId 의 세션은 그대로.
         const prev = attachSocket(user, deviceId, ws);
         if (prev && prev !== ws) {
+          console.log(`[DBG:hello:4] 동일 deviceId 재접속 — 이전 소켓 교체`);
           try { send(prev, { type: 'error', message: 'replaced by same-device reconnect' }); prev.close(4000, 'replaced'); } catch (_) {}
         }
 
         const wasOnline = (await redis.sIsMember('online', user)) === 1;
+        console.log(`[DBG:hello:5] Redis sessionStart 호출 user=${user} wasOnline=${wasOnline}`);
         const sid = await sessionStart(user, deviceId, deviceType);
+        console.log(`[DBG:hello:6] Redis 세션 생성 완료 sid=${sid} TTL=${SESSION_TTL}s`);
         const online = await getOnline();
         const myDevices = await devicesOf(user);
+        console.log(`[DBG:hello:7] welcome 전송 → client (online=${online.length}명, myDevices=${myDevices.length}개)`);
         send(ws, { type: 'welcome', user, role: payload.role || 'user', sid, deviceId, devices: myDevices, online });
 
-        // 첫 디바이스 접속 시에만 다른 user 에게 presence on 알림.
-        if (!wasOnline) presenceOn(user, true);
+        if (!wasOnline) {
+          console.log(`[DBG:hello:8] 첫 디바이스 접속 → 다른 사용자에게 presence:on 브로드캐스트`);
+          presenceOn(user, true);
+        }
 
-        // inbox drain: 이 user 의 첫 디바이스가 들어왔을 때만 의미 있음.
-        // 이후 디바이스는 이미 비어있을 거고 (drain 했으니까), 빈 array 처리.
+        console.log(`[DBG:hello:9] inbox drain 시작 (Redis LRANGE inbox:${user})`);
         const pending = await drainInbox(user);
         if (pending.length) {
-          // user 의 모든 활성 디바이스에 fan-out — 새로 들어온 이 디바이스 포함.
+          console.log(`[DBG:hello:10] 오프라인 inbox ${pending.length}건 drain → 모든 활성 디바이스 fan-out`);
           for (const w of socketsOf(user).values()) {
             if (w.readyState !== 1) continue;
             pending.forEach(msg => send(w, { type: 'msg', ...msg }));
           }
+        } else {
+          console.log(`[DBG:hello:10] inbox 비어있음 (드레인 없음)`);
         }
         console.log(`    hello ${user}/${deviceId} role=${payload.role} sid=${sid}  (devices=${myDevices.length}, online=${online.length}, drained=${pending.length})`);
         return;
@@ -454,38 +464,45 @@ wss.on('connection', (ws, req) => {
       //          한 디바이스라도 온라인이면 Redis 적재 없이 즉시 send 만.
       //          모든 디바이스 오프라인이면 inbox 큐에 적재.
       if (m.type === 'msg') {
-        // 6주차 ③안: 매 메시지 진입 시 토큰 재검증. 만료/위조 → close 4002.
+        console.log(`[DBG:msg:1] 수신 from=${user} to=${m.to} bodyLen=${m.body?.length}`);
         try {
+          console.log(`[DBG:msg:2] JWT 재검증 (매 메시지 필수)`);
           jwt.verify(authToken, JWT_SECRET, { algorithms: ['HS256'] });
+          console.log(`[DBG:msg:3] JWT 재검증 성공`);
         } catch (e) {
+          console.log(`[DBG:msg:ERR] JWT 만료/위조 → close 4002: ${e.message}`);
           send(ws, { type: 'error', code: 'token_expired', message: 'token expired — send authRefresh first: ' + e.message });
           return ws.close(4002, 'token expired');
         }
         if (!m.to || typeof m.body !== 'string') {
           return send(ws, { type: 'error', message: 'to + body required' });
         }
+        console.log(`[DBG:msg:4] sessionTouch → Redis TTL 갱신`);
         await sessionTouch(user, deviceId);
         const msg = { from: user, to: m.to, body: m.body, ts: Date.now(), id: newId() };
+        console.log(`[DBG:msg:5] 메시지 객체 생성 id=${msg.id} ts=${msg.ts}`);
 
-        // 1) 발신자 본인의 모든 디바이스에 echo (carbon copy 효과)
         let echoed = 0;
         for (const w of socketsOf(user).values()) {
           if (w.readyState === 1) { send(w, { type: 'msg', ...msg }); echoed++; }
         }
+        console.log(`[DBG:msg:6] Carbon Copy → 발신자(${user}) 디바이스 ${echoed}개에 echo 완료`);
 
-        // 2) 수신자 fan-out
         const targets = socketsOf(m.to);
         if (targets.size > 0) {
+          let sent = 0;
           for (const w of targets.values()) {
-            if (w.readyState === 1) send(w, { type: 'msg', ...msg });
+            if (w.readyState === 1) { send(w, { type: 'msg', ...msg }); sent++; }
           }
+          console.log(`[DBG:msg:7] 수신자(${m.to}) 온라인 → ${sent}개 디바이스에 즉시 전달`);
         } else {
+          console.log(`[DBG:msg:7] 수신자(${m.to}) 오프라인 → Redis inbox:${m.to} 에 적재 (TTL ${INBOX_TTL}s)`);
           await pushInbox(m.to, msg);
         }
 
-        // 3) Mongoose 미러링 (fire-and-forget, 채팅 흐름 비차단)
-        //    mod_mam 으로 PostgreSQL 에 영구 저장됨. 미팅 지시 "Mongoose로 보낸다" 만족.
+        console.log(`[DBG:msg:8] Mongoose 미러링 시작 (fire-and-forget, 비차단)`);
         forwardToMongoose(user, m.to, m.body);
+        console.log(`[DBG:msg:9] 처리 완료 — 클라이언트로 반환 없음 (echo가 확인 역할)`);
         return;
       }
 
@@ -499,8 +516,12 @@ wss.on('connection', (ws, req) => {
   ws.on('close', async () => {
     if (user && deviceId && detachSocket(user, deviceId, ws)) {
       try {
+        console.log(`[DBG:close:1] 소켓 종료 → Redis sessionEnd user=${user}/${deviceId}`);
         const { lastDeviceGone } = await sessionEnd(user, deviceId);
-        if (lastDeviceGone) presenceOn(user, false);
+        if (lastDeviceGone) {
+          console.log(`[DBG:close:2] 마지막 디바이스 → online Set 제거 + presence:off 브로드캐스트`);
+          presenceOn(user, false);
+        }
         const remaining = (localSockets.get(user) || new Map()).size;
         console.log(`[-] bye ${user}/${deviceId}  (remaining devices of this user=${remaining})`);
       } catch (e) {

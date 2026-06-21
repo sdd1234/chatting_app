@@ -83,6 +83,7 @@ public class UserService {
     public boolean verify(String user, String rawPassword) {
         String q = "query($u:JID!,$p:String!){ account{ checkPassword(user:$u, password:$p){ correct } } }";
         String jid = user + "@" + domain;
+        log.debug("[DBG:verify:1] Mongoose checkPassword 호출 jid={}", jid);
         try {
             String raw = mongoose.post()
                 .body(Map.of("query", q, "variables", Map.of("u", jid, "p", rawPassword)))
@@ -93,7 +94,9 @@ public class UserService {
                 log.warn("checkPassword errors for {}: {}", jid, root.get("errors"));
                 return false;
             }
-            return root.path("data").path("account").path("checkPassword").path("correct").asBoolean(false);
+            boolean correct = root.path("data").path("account").path("checkPassword").path("correct").asBoolean(false);
+            log.debug("[DBG:verify:2] checkPassword 응답 correct={}", correct);
+            return correct;
         } catch (Exception e) {
             log.warn("checkPassword call failed for {}: {}", jid, e.getMessage());
             return false;
@@ -129,10 +132,13 @@ public class UserService {
         if (password.length() < 4 || password.length() > 64) {
             throw new RegisterException(RegisterError.BAD_INPUT, "password는 4~64자");
         }
+        log.debug("[DBG:register:A] Redis 중복 체크 key=auth:user:{}", u);
         if (exists(u)) {
+            log.debug("[DBG:register:ERR] 이미 존재하는 사용자 → 409 Conflict");
             throw new RegisterException(RegisterError.CONFLICT, "이미 가입된 사용자");
         }
 
+        log.debug("[DBG:register:B] Mongoose registerUser 호출 domain={} username={}", domain, u);
         // Mongoose에 등록 시도
         String q = "mutation($d:DomainName!,$u:UserName,$p:String!){"
                  + " account{ registerUser(domain:$d, username:$u, password:$p){ message } } }";
@@ -161,6 +167,7 @@ public class UserService {
                 "Mongoose 호출 실패: " + e.getMessage());
         }
 
+        log.debug("[DBG:register:C] Mongoose 등록 성공 → Redis HSET auth:user:{} role=user", u);
         // Redis role 시드 (default user)
         redis.opsForHash().put(key(u), "role", "user");
         log.info("register ok: user={} domain={}", u, domain);
