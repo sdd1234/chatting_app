@@ -208,7 +208,7 @@ MongooseIM/
 - [x] **읽음 "1"** / 안 읽음 카운트 (방 들어가면 자동 read)
 - [x] **타이핑 "..."** bouncing (5초 자동 만료)
 - [x] **단체 공지** (admin 전용 push, Redis pub-sub, 모든 슬롯 동시 토스트)
-- [x] 친구 목록 (`/users` — 일반 user 도 조회, Mongoose `listUsers` 프록시)
+- [x] **친구 목록** (`/friends` — 내가 추가한 회원만 표시, 추가 시 Mongoose `listUsers`로 가입 여부 확인 후 PostgreSQL 영구 저장, 8주차 ② — 아래 섹션)
 - [x] 메시지 영구 저장 (plain-ws → Mongoose `sendMessage` 미러링 → mod_mam)
 
 ### ✅ 클라이언트
@@ -242,7 +242,7 @@ MongooseIM/
 | **5주차** | **Spring Boot + React 프레임워크 통합** (이번 산출물) | ✅ |
 | **6주차** | ① 메시지 송신 시 토큰 만료 검증 = plain-ws 자체 (③안)<br>② React → React Native **Expo CLI** 전환 (RN CLI 금지) + 파일첨부·번역 | ① ✅ / ② ✅ (실폰 구동만 남음) |
 | **7주차** | ① JWT 인증 구조 점검 (Spring↔plain-ws 알고리즘 일치 / MongooseIM 인증 커스텀 가능성)<br>② 기능 모듈별 구조 정리 (채팅·파일·번역·주소록)<br>③ 파일 전송 플로우 점검 (업로드→URL 전송→다운로드) | ✅ 점검·문서화 |
-| **8주차** | ① 실제 `[DBG:*]` 로그 삽입 → `docker logs` 실측 → 기능별 코드 플로우 PDF 작성<br>② 친구 목록 회원 필터링 구현 (예정) | ① ✅ |
+| **8주차** | ① 실제 `[DBG:*]` 로그 삽입 → `docker logs` 실측 → 기능별 코드 플로우 PDF 작성<br>② 친구 목록 회원 필터링 구현 (PostgreSQL B안) | ① ✅ / ② ✅ |
 
 자세한 미팅 결정사항: 위 표의 6주차 항목 참조
 
@@ -507,6 +507,29 @@ MongooseIM 은 **JWT 인증 백엔드 `[auth.jwt]` 를 공식 지원**한다(공
 | 파일 다운로드 | ~10ms | JWT 검증 → 파일 읽기 → 응답 |
 | 번역 캐시 미스 | ~558ms | Google 비공식 API 외부 호출 |
 | 번역 캐시 히트 | ~11ms | ConcurrentHashMap 메모리 즉시 반환 |
+
+---
+
+### ② 친구 목록 회원 필터링 구현 (PostgreSQL B안)
+
+기존 `/users`는 Mongoose에 가입된 **전체 회원**을 그대로 보여줬다(미팅 지적: "회원 가입해서 딱 열었는데 자기가 모르는 사람들이 다 보인다"). **내가 추가한 사람만** 친구 목록에 뜨도록 변경했다.
+
+- **DB 선택**: 별도 DB 대신 **MongooseIM이 이미 쓰는 Postgres(`xmpp-db`)에 `friends` 테이블만 새로 추가**(B안). 회의에서 나온 "분리해도 되고 안 해도 된다"는 선택지 중, 채팅 서버 DB 분리 전이라 굳이 안 나누는 쪽으로 결정.
+- **`FriendController.java`**: `GET /friends`(내 친구 목록) · `POST /friends/add`(추가, body `{target}`) · `DELETE /friends/{target}`(삭제). 모두 JWT 필수.
+- **가입 여부 검증**: 친구 추가 시 Mongoose GraphQL `listUsers`로 대상이 실제 회원인지 확인 → 미가입이면 **404**로 거부(가짜/존재하지 않는 사용자를 친구로 등록 못 함).
+- **영구 저장**: `friends(owner, friend, created_at)` PK(owner, friend), `schema.sql`이 앱 기동 시 `CREATE TABLE IF NOT EXISTS`.
+- **클라**: `Friends.tsx` 전체 회원 노출 → 친구 목록 + 추가/삭제 UI로 교체.
+
+**실서버 검증 (2026-06-23)**: docker 기동 후 curl로 재현.
+```
+GET /friends                          → {"friends":[]}
+POST /friends/add {target:"emma"}     → {"ok":true,"target":"emma"}        (실제 회원)
+POST /friends/add {target:"ghost123"} → 404 "존재하지 않는 회원입니다: ghost123"  (가짜 회원 차단)
+GET /friends                          → {"friends":["emma"]}
+DELETE /friends/emma                  → {"ok":true}
+GET /friends                          → {"friends":[]}
+```
+Postgres `friends` 테이블 직접 조회로 영구 저장도 확인(`SELECT * FROM friends` → `jihoon | minho` row 존재).
 
 ---
 
